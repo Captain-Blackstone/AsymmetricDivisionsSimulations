@@ -1,0 +1,203 @@
+TODO:
+	- 2007 Damage segregation at fissioning may increase growth rates (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2430589/)
+	- 2008 Selective benefits of damage partitioning in unicellular systems and its effects on aging (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2596250/)
+	- 2008 Asymmetric segregation of protein aggregates is associated with cellular aging and rejuvenation (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2268587/)
+	- 2008 Asymmetric mitosis: Unequal segregation of proteins destined for degradation (https://pubmed.ncbi.nlm.nih.gov/18511557/)
+        - 2008 Asymmetric segregation of protein aggregates is associated with cellular aging and rejuvenation (https://pubmed.ncbi.nlm.nih.gov/18287048/)
+        - 2011 Temporal dynamics of bacterial aging and rejuvenation (https://www.sciencedirect.com/science/article/pii/S0960982211010207)	
+	- 2012 Ageing in Escherichia coli requires damage by an extrinsic agent (https://www.microbiologyresearch.org/content/journal/micro/10.1099/mic.0.057240-0)
+	- 2014 Repair rather than segregation of damage is the optimal unicellular aging strategy  (https://pubmed.ncbi.nlm.nih.gov/25184818/)
+        - 2019 Cell aging preserves cellular immortality in the presence of lethal levels of damage  (https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.3000266)
+	- Repair and its evolution: Survival versus reproduction (???)
+        - Sex and Longevity: Sexuality, Gender, Reproduction, Parenthood: Human Longevity and Parental Age at Conception (https://link.springer.com/chapter/10.1007/978-3-642-59558-5_2)
+
+DONE:
+	- Biological Consequences and Advantages of Asymmetric Bacterial Growth
+	- Senescence in a bacterium with asymmetric division
+	- On the evolutionary origin of aging
+	- Aging and Death in an Organism That Reproduces by Morphologically Symmetric Division
+	- Polarised asymmetric inheritance of accumulated protein damage in higher eukaryotes	
+	- A Model for Damage Load and Its Implications for the Evolution of Bacterial Aging
+	- Asymmetrical Damage Partitioning in Bacteria: A Model for the Evolution of Stochasticity, Determinism, and Genetic Assimilation 
+	- Aging may be a conditional strategic choice and not an inevitable outcome for bacteria
+	- Senescence: even bacteria get old
+	- Immortality dies as bacteria show their age
+-----
+2003 Senescence in a bacterium with asymmetric division (https://www.science.org/doi/full/10.1126/science.1083532?casa_token=EPBFzr3QMPAAAAAA:TU_WQwDChD6mAkGZm9548Vw2jf0upHucRKqtiBbQ4wY4OaAA3MTRZ-4MnLJVSOgxBSFwdfugrY3E2w)
+	- Caulobacter crescentus. The stalked cells age and decrease their reproductive output with experimental time. Swarmer cells do not age and maintain their reproductive output regardless of the time of the experiment.
+-----
+
+-----
+2005 Aging and Death in an Organism That Reproduces by Morphologically Symmetric Division (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC546039/)
+- E.coli reproduces morphologically simmetrically. But at each division one pole is the old one, and one is the new one (from the middle of the cell).
+- Some cell wall components tend to be associated with a single pole. Like murein and cell wall proteins. 
+- Res#1: the cells inheriting old poles have lesser growth rate, the effect is cummulative over generations (a beautiful figure#2!0)
+- Res#2: daughters of the old cells grow slower than daughters of the young cells.
+- Res#3: old pole cells produce less "biomass" as measured by the length of daughter cells.
+- Res#4: old pole cells produce mode dead offspring. The cells that ceased growing and dividing were considered dead. They were not considered "persister" as their frequency appeared to be 400 times higher than it was demonstrated to be normal for persisters in the growth phase.
+-----
+
+-----
+2006 Polarised asymmetric inheritance of accumulated protein damage in higher eukaryotes (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1750924/)
+- Some misfolded/damaged proteins aggregate into bodies called aggresomes. Such aggregates are transported to MTOC
+- Aggresome proteins do not get shredded in the proteasome. Instead, cells sometimes dispose of them by autophagy.
+- I don't want to read the rest.
+-----
+
+-----
+2006 Aging may be a conditional strategic choice and not an inevitable outcome for bacteria (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1595437/)
+- Model:
+	- Specification:
+		- Leslie matrix for cell components (assumption: in the cell there are several components that age and therefore limit cell performance; at each step a new bunch of comonents is synthetised that comprise age cohord #1 and all the other components from cohort #i move to the cohort #i+1
+		- New components added based on the growth rate of the cell. And the growth rate of the cell is calculated based on the ages of its components.
+		- There are m discrete age classes. Cn - component of age class n. Rn - reproductive efficiency of component of age class n. Pn - probability of component of age class n surviving to the age class n+1. Leslie matrix is:
+		R1	R2	...	Rm-1	Rm - this row is used to calculate the amount of C1, C1 = R1C1 + R2C2 + ... + (Rm-1)(Cm-1) + RmCm
+		P1	0	...	0	0  - this row is used to transit C1(t) to C2(t+1): C2(t+1) = C1(t)*P1
+		0	P2	...	0	0  - etc.
+		0	0	...	0	0
+		0	0	...	Pm-1	0   
+		- The decline of reproductive efficiency with age is given by: Rn = R1 - a*n^b, a>0 and b are parameters. This equation allows both for linear (b=1), convex (b>1) and concave (b<1) decine
+		- For simplicity, P = 1 if n < m; P=0 if n = m (only components of the oldest possible age are destroyed).	
+		- ASYMMETRY:
+			- A new cell emerges having all the components of age class 1 synthetised by its mother. Second daughter (=mother) yields all the old components making them of class n+1. In this case the Leslie matrix for the components is equal to the Leslie matrix of cells.
+		- SYMMETRY:
+			- Each cell has identical distribution of components between age classes. 
+			- The components of the mth age class are not removed but are accumulated; they can be repaired (moved to the age class 1) with efficiency r. So, Cm*r is substracted from the mth age class and added to the 1st age class.
+			- Two alternative ways components may affect the growth rate:
+				- Growth rate is an average R weighted by the amounts of the components
+				- Components are involved in pathways (a pathway requires on average two components), the efficiency of a pathway is defined by the least efficient component. So, the growth rate is given by the probability of a component of age class i to be the limiting one multiplied by the Ri
+		- Growth rate: popsize(t+1)/popsize(t)
+		- Growth yield: (popsize(t+1) - popsize(t))/popsize(t)
+		- Growth yield: ??? ('net increase in the number of living cells or components divided by the number of cells or components synthesized')
+	- Observations:
+		- The equilibrium distribution of age classes was almost always achieved. For asymmetric case it was ~hyperbolic and for asymmetric case ~same but with excess of the oldest age class. The magnitude of excess was dependent on the r parameter.
+		- Independent components gave no advantage to asymmetrical division (why?)
+		- If a and b are small, asymmetry is also disfavored (cost of death is too high since last age class contributes to the fitness greatly)
+- If repair is introduced into asymmetric model, growth yield is decreased -> no good.
+- Relaxing some other asumptions did not affect a model in any meaningful way
+-----
+
+-----
+2007 Damage segregation at fissioning may increase growth rates: a superprocess model (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2430589/)
+- Fig.1 illustrates very well the process of damage accumulation and how unequal partitioning of damage may increase fitness
+- Model:
+	- Specification:
+		- A population is a collection of cells. Cells can perform activities of 4 kinds: (1) accumulate damage, (2) repair damage, (3) die, (4) divide.
+		- Damage repair + damage accumulation = net damage
+		- net damage fluctuates randomly with parameters sigma(x) and b(x), where x - current amount of damage, sigma represents intencity of the fluctuation, b - the direction.
+		- Oh, god, there's too much highter maths for me. I think I will stop reading now. 	  
+-----
+
+-----
+2007 On the evolutionary origin of aging (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2049046/)
+	- Bacteria often don't distribute their structures equaly between daughter cells upon division. That means that individuality is not often lost upon division, as one of the daughter cells is closer to the mother cells than another.
+	- Model_1:
+		- Specification:	
+			- Each cell starts with d amount of damage.
+			- A cell accumulates k amount of damage during its life.
+			- Upon division, one offspring gets 0.5*(1+a)(k+d)/2 of damage, and another one 0.5*(1-a)(k+d)/2 of damage. A range from 0 (total symmetry) from 1 (total assymmetry).
+		- Observations:	
+			- In a population of totally symmetric divisers the equilibrium amount of damage is k at the start of the generation and 2k at the end (then cells divide and 2k of damage is distributed between twice as many cells so that each cell receives k of damage).
+			- In a fully assymmetric population each has 0, k, 2k, 3k... of damage. We therefore can distinguish individuals that live through generations. The birthdate is a generation where a cell has 0 damage and the age is then equals (damage)/k + 1. 
+	- Model_2:
+		- Specification:
+			- super(Model_1)
+			- s(d) - probability to survive with amound of damage d until reproduction.
+	-Model_2a:
+		- Specification:
+			- s(d) = (1 - d/d0) for a constant d0
+		- Observations:
+			- if a cell divides symmetrically, both daughters inherit k damage and have probability of survival 1-k/d0. Table of probabilities for survival of x daughter cells:
+				x	prob
+				0	(k/d0)^2
+				1	2*(k/d0)*(1-k/d0)
+				2 	(1-k/d0)^2
+			- expected number of survivors: 2*(k/d0)*(1-k/d0) + 2*(1-k/d0)^2 = 2*(1-k/d0)(k/d0 + 1 - k/d0) = 2*(1-k/d0)
+			- if a cell divides asymmetrically with a=1, one daughter inherits 0 damage and the other - 2k. So, the probability of surival is:
+				x	prob
+				0	0
+				1	2k/d0
+				2	1-(2k/d0)
+			- expected number of survivors: 2k/d0 + 2*(1-(2k/d0)) = 2 - 2k/d0 = 2*(1-k/d0)
+			- So, the linear assymmetry does not impact the expected number of surviving offspring, therefore fitness. Or does it?
+			- a symmetricaly dividing cell leaves on average the same number of daughters as an assymmetrically dividing one. But they are on average more damaged. Therefore, it will leave less granddaughters and even less grand-granddaughters. Let's show that:
+				For symmetrically dividing cell:
+					x       prob			damage
+	                                0       (k/d0)^2		0
+                               		1       2*(k/d0)*(1-k/d0)	k
+                                	2       (1-k/d0)^2		2k
+				Average amount of damage:
+					k*2*(k/d0)*(1-k/d0) + 2k*(1-k/d0)^2 = 2k(1-k/d0)
+				For assymmetrically dividing cell:
+					x       prob			damage
+	                                0       0			0
+        	                        1       2k/d0			0
+                	                2       1-(2k/d0)		2k
+				Average amount of damage:
+					2k(1-2k/d0) < 2k(1-k/d0)
+	- Model_2b...e
+		- Specification:
+			- s(d) is concave (small amounts of damage are tolerated)
+		- Observations:
+			- The more concave the function is, the more symmetry is favored. (I LACK INTUITIVE UNDERSTANDING OF THIS RESULD)
+
+- If the amount of damage affects the waiting time until the division rather than the survival probability, the results hold. The benefits of assymmetry are even more obvious, since the hedging of reproduction times usually is a good idea.
+
+- What if damage can be repaired instead of being distributed to daughter cells?
+	- MOdel_3:
+		- Specification:
+			- Each cell repairs amount of damage r. So, it accumulates k-r of damage through its lifespan.		
+			- Repair comes at a cost. So, the survival probability becomes s(d, r)
+ 			- s(d,r) = s(d)*(1-r/r0)
+		- Observations:
+			- Intermediate repair is favoured in the absence of asymmetry.	
+			- Once asymmetry is pluged in, repair is disfavoured, because many cells don't have any damage, but still need to invest in repair.
+
+- Main difference from Evans & Steinsaltz (2006) is that damage there is duplicated before distributing it to the daughter cells (like genetic damage) and here it is not (like phenotypic damage).
+- Experiments indicate that the dependence of fitness on the amount of damage might in fact be almost linear and even slightly convex. 	
+-----
+
+-----
+2010 A Model for Damage Load and Its Implications for the Evolution of Bacterial Aging (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2928801/)
+- Difference from other models - damage accumulation timing is taken into account. Like when the damage was inflicted, at the start or at the end of a cell cycle. It can impact the cycle itself, potentially prolonging it leading to more damage. 
+- Model:
+	- Specification:
+		- k0 - amount of damage inherited from mother.
+		- h - damage rate, k(t) = k0 + ht
+		- The condition for division: conecntration of product P exceeds the threshold П. 
+		- damage hinders function linearly.
+		- dP/dt = 1-k(t) = 1 - k0 - ht; P(t) = (1-k0)t - (h/2)t^2 (integration constant = 0 because P(0) is assumed to be 0); П = P(T0) = (1-k0)T0 - (h/2)T0^2
+		- D0 - amount of accumulated damage at the time of division. D0 = k0 + hT0
+		- Damage is divided in the following way: k1 = (k0 + hT0)a, k2 = (k0+hT0)(1-a)
+		- For a daughter i (i = 1 or 2): П = (1-ki)Ti - (h/2)Ti^2; Ti = {(1-ki) - sqrt[(1-ki)^2 - 2Пh]/h}; thus doubling time of a daughter is known given k0, which can be calculated from doubling time of a mother: k0 = 1-(h/2)T0 - П/T0
+	- Observations:
+		- the equilibrium ki and Ti can be achieved in some space of parameters alpha = a/(1-a), h and П. However, h and П are only seen together as h*П superparameter, so, it's effectively two parameters. h*П represents total amount of damage accumulated through the lifeteime. In my understanding, it means that the consideration of damage accumulation timing in this model (which is the killer feature) was redundant. 
+-----
+
+
+-----
+2013 Biological Consequences and Advantages of Asymmetric Bacterial Growth (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4001765/)
+	- Asymmetric divisions are widespread and emerged indemendently many times.
+	- Assymmetric division can help selection for reduced damage. If the damage is ingerited symmetrically by both daugther cells, everyone becomes worse with time. If not, some cells become much worse, but some stay damage-free and relatively fitter than their less lucky colleagues. Thus selection on damage reduction can work.
+-----
+
+-----
+2016 Asymmetrical Damage Partitioning in Bacteria: A Model for the Evolution of Stochasticity, Determinism, and Genetic Assimilation (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4711911/)
+- Same as 2010 model, but with genetic assimilation.
+- Model_1
+	- Specification:
+		- super().__init__
+		- a is now not fixed but drawn from normal distribution with mean a and sigma_s
+		- sigma_s is estimated from the 2005 E.coli experiments
+		- daughter #1 always gets less than or equal damage to daughter # 2 (because a <= 0.5)
+	- Observations:
+		- Symmetric population (a=0.5) with stochasticity survives amounts of damage that symmetric population w/o stochastisity does not. That's because symmetric stochastic population is in fact not symmetric, because the value of a is rarely 0.5.
+		- But why asymmetry is... asymmetric with respect to old and new pole? It would make sense for the bacteria to distribute the damage unequally, but every time the most damage could go to a different daughter. It's not the case for the real cells. In 2005 experiment it was shown that the old pole cells senesce faster. The suggested answer is model_2.
+- Model_2
+	- Specification:
+		- Adding anchored damage. That is, some part of damage C is always inherited by the daughter #1 (old daughter) and the rest (1-C) - distributed between two daughters depending on the a value of the mother.
+	- Observations:
+		- When increasing C initially the fitness of a stochastic population decreases. That is because of the model features, as I understand. Because stochastic damage distributes mode damage to daughter #2 and anchored damage is anchored to daughter #1. So, addition of C parameter increases symmetry (decreases variance). But that means, the asymmetry is even more favored and "asymmetric" asymmetry evolves. 
+		- As I said, in my understanding this is bullshit. If their model did not distribute more damage to the daugter # 2, the variance would not decrease with addition of C parameter and the asymmetric asymmetry would not be favored.
+		- All in all, this section is vague to me. Maybe I need to reread it. They start with an asymmetric asymmetry question, but then they study the dependence of asymmetry level on the amount of anchored damage, which is already asymmetric asymmetry.	  
+-----
