@@ -1,6 +1,18 @@
+"""
+Firstly, the simulation runs fine on the cluster. I would rename the output file so that the parameters are readable
+within the file name - alternatively as a header for the output - whatever is your preference. I would also add a dummy
+index variable so that the output always have unique names and can be saved in the same directory.
+
+For the data itself, I would reformat so that each line contains: column 1 = timestep, column 2 = unique cell ID (the order in which the cell was simulated), column 3 = cell age, column 4 = cell damage, column 5 = true if cell divided in that time step, column 6 = true if cell died in that time step + whatever else we include later. The formatting is up to you of course but I think this is the minimum data we need to record.
+
+Next, please do write up a lyx file (if you don't mind) or otherwise just a plain text document specifying exactly what you do in pseudo code so we can both easily refer to the algorithm. Currently the cell number is constant for many timesteps (I suppose because the dilution rate is 0.1% correct?) and then abruptly jumps so I think the next order of business is to take care of the synchronization.
+
+I have attached some notes about how to address the synchronization. I'm familiar with the formalism without incorporating damage accumulation or asymmetric division. I started sketching out how to solve the case for damage accumulation but didn't get far. Do you still want to meet in the afternoon (let's say 1:15 this time if that's OK) or would you like to meet in the morning? If so, let's say 9:30am. I suspect you're asleep now and I will be asleep when you wake up, but just email me and I'll plan accordingly
+"""
 import numpy as np
 import pandas as pd
 import sys
+import datetime
 
 
 class History:
@@ -13,6 +25,7 @@ class History:
         self.table = pd.concat([self.table, row], ignore_index=True)
 
     def save(self, file_path):
+        file_path = ".".join(file_path.split(".")[:-1]) + f"_{round(datetime.datetime.now().timestamp() % 100000000)}." + file_path.split(".")[-1]
         self.table.to_csv(file_path, sep="\t", index=False)
 
     def __str__(self):
@@ -44,7 +57,7 @@ class Simulation:
 
             # History is recorded
         self.history.record()
-        
+
     def run(self, n_steps):
         for _ in range(n_steps):
             self.step()
@@ -90,4 +103,4 @@ if __name__ == "__main__":
                                       n_cells=1),
                             carrying_capacity=carrying_capacity)
     simulation.run(200)
-    simulation.history.save("history.tsv")
+    simulation.history.save("../data/history.tsv")
