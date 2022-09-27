@@ -1,2 +1,3 @@
 .idea/
-simulations/__pycache__
+simulations/__pycache__/
+simulations/data/

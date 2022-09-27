@@ -1,0 +1,586 @@
+#LyX 2.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 544
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_minted 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+Simulation Specification
+\end_layout
+
+\begin_layout Standard
+CONFIG
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\alpha,\beta$
+\end_inset
+
+ - parameters of gamma distribution (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $V$
+\end_inset
+
+ - volume of chemostat (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $D$
+\end_inset
+
+ - dilution rate (float)
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Cells
+\end_layout
+
+\begin_layout Standard
+Each cell has 5 attributes:
+\end_layout
+
+\begin_layout Standard
+1.
+ cell id (integer) - unique identifier of a cell; it is given to a cell
+ when the cell is born;
+\end_layout
+
+\begin_layout Standard
+2.
+ age (integer) - number of generations passed since this cell was born (=
+ its mother cell divided); when the cell is born it is equal to 0;
+\end_layout
+
+\begin_layout Standard
+3.
+ probability of division (float) - the probability for a cell to divide
+ in the current generation.
+ This property is calculated from the cell age with the following formula:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $P=\frac{gamma(age,\alpha,\beta)}{1-\int_{0}^{age}gamma(x,\alpha,\beta)dx}$
+\end_inset
+
+, where 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ and 
+\begin_inset Formula $\beta$
+\end_inset
+
+ are taken from CONFIG.
+ 
+\end_layout
+
+\begin_layout Standard
+4.
+ has reproduced (boolean) - whether the cell reproduced in the current generatio
+n or not; when the cell is born it is set to False;
+\end_layout
+
+\begin_layout Standard
+5.
+ has died (boolean) - whether cell has died in the current generation or
+ not; when the cell is born it is set to False.
+\end_layout
+
+\begin_layout Standard
+Cells can do the following actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Reproduce.
+ Takes a parameter 
+\begin_inset Quotes eld
+\end_inset
+
+offspring id
+\begin_inset Quotes erd
+\end_inset
+
+ as an input.
+ 
+\end_layout
+
+\begin_layout Standard
+- A random number is generated.
+ If this number is less than probability of division of this cell, the cell
+ produces two daughter cells and its 
+\begin_inset Quotes eld
+\end_inset
+
+has reproduced
+\begin_inset Quotes erd
+\end_inset
+
+ attribute is set to True.
+ The daughter cells have cell id of mother cell and offspring id as their
+ cell ids.
+ If it is greater than probability of division, 
+\begin_inset Quotes eld
+\end_inset
+
+has reproduced
+\begin_inset Quotes erd
+\end_inset
+
+ attribute is set to False.
+\end_layout
+
+\begin_layout Standard
+2.
+ Die
+\end_layout
+
+\begin_layout Standard
+- The attribute 
+\begin_inset Quotes eld
+\end_inset
+
+has died
+\begin_inset Quotes erd
+\end_inset
+
+ of the cell is set to True.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Chemostat
+\end_layout
+
+\begin_layout Standard
+Chemostat has 4 attributes:
+\end_layout
+
+\begin_layout Standard
+- V (float) - volume of chemostat; provided when chemostat is created; taken
+ from CONFIG;
+\end_layout
+
+\begin_layout Standard
+- D (float) - dilution rate; provided when chemostat is created; taken from
+ CONFIG;
+\end_layout
+
+\begin_layout Standard
+- cells (list) - list of cells that this chemostat contains; when chemostat
+ is created is empty; if initial number of cells is provied this list is
+ filled with this number of cells;
+\end_layout
+
+\begin_layout Standard
+- N (integer) - length of 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ list of chemostat; calculated from the 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ parameter.
+\end_layout
+
+\begin_layout Standard
+Chemostat can do the following actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Populate with cells.
+ Takes a parameter 
+\begin_inset Quotes eld
+\end_inset
+
+number of cells
+\begin_inset Quotes erd
+\end_inset
+
+ as input.
+\end_layout
+
+\begin_layout Standard
+- The 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ list is filled with cells.
+ The generated cells have ids from 0 to (
+\begin_inset Quotes eld
+\end_inset
+
+number of cells
+\begin_inset Quotes erd
+\end_inset
+
+ - 1).
+\end_layout
+
+\begin_layout Standard
+2.
+ Dilute.
+\end_layout
+
+\begin_layout Standard
+- The number of cells to be removed from the chemostat is drawn from the
+ poisson distribution with parameter 
+\begin_inset Formula $\lambda=D*\frac{N^{2}}{V}$
+\end_inset
+
+.
+ If this number is greater then the number of cells, all cells are removed
+ from the chemostat.
+ This number of cells, randomly chosen, perform 
+\begin_inset Quotes eld
+\end_inset
+
+Die
+\begin_inset Quotes erd
+\end_inset
+
+ action.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Simulation
+\end_layout
+
+\begin_layout Standard
+Simulation has 2 attributes:
+\end_layout
+
+\begin_layout Standard
+- Chemostat (Chemostat); when simulation is created it is supplied with
+ one;
+\end_layout
+
+\begin_layout Standard
+- History (History); the object that contains all the history of the simulation.
+ Blank at the start.
+\end_layout
+
+\begin_layout Standard
+- Current maximum id (integer) - the maxium id of the cells of the simulation's
+ chemostat.
+ Calculated based on the chemostat object.
+\end_layout
+
+\begin_layout Standard
+Simulation can do two actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Run.
+ Takes number of steps as input.
+\end_layout
+
+\begin_layout Standard
+- Performs 
+\begin_inset Quotes eld
+\end_inset
+
+number of steps
+\begin_inset Quotes erd
+\end_inset
+
+ steps of a simulation.
+\end_layout
+
+\begin_layout Standard
+2.
+ Step.
+\end_layout
+
+\begin_layout Standard
+This action consists of the following stages:
+\end_layout
+
+\begin_layout Standard
+1) Chemostat performs 
+\begin_inset Quotes eld
+\end_inset
+
+dilute
+\begin_inset Quotes erd
+\end_inset
+
+ action;
+\end_layout
+
+\begin_layout Standard
+2) A list of next generation cells is created; all cells of the chemostat
+ that have their attribute 
+\begin_inset Quotes eld
+\end_inset
+
+has died
+\begin_inset Quotes erd
+\end_inset
+
+ set to False perform 
+\begin_inset Quotes eld
+\end_inset
+
+reproduce
+\begin_inset Quotes erd
+\end_inset
+
+ action with 
+\begin_inset Quotes eld
+\end_inset
+
+current maximum id
+\begin_inset Quotes erd
+\end_inset
+
+ + 1 supplied as offspring id.
+ Either offspring of the division or the mother cell is added to the next
+ generation cells list.
+\end_layout
+
+\begin_layout Standard
+3) History object of the simulation performs 
+\begin_inset Quotes eld
+\end_inset
+
+record
+\begin_inset Quotes erd
+\end_inset
+
+ action;
+\end_layout
+
+\begin_layout Standard
+4) The 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ attribute of simulation's chemostat is set to the list of next generation
+ cells;
+\end_layout
+
+\begin_layout Standard
+5) All the cells in chemostate increase their age value by 1.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+History
+\end_layout
+
+\begin_layout Standard
+History has 3 attributes:
+\end_layout
+
+\begin_layout Standard
+- simulation (Simulation) - a simulation object the history object is linked
+ to;
+\end_layout
+
+\begin_layout Standard
+- history table (data frame) - table that stores the information about the
+ number of cells at each generation; Rows: generation, n_cells.
+\end_layout
+
+\begin_layout Standard
+- cells table (data frame) - table that stores the information about all
+ the cells at each generation.
+ Rows: generation, cell_id, cell_age, cell_damage, has_divided, has_died.
+\end_layout
+
+\begin_layout Standard
+History has two actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Record
+\end_layout
+
+\begin_layout Standard
+- A single row corresponding to the current state of the 
+\begin_inset Quotes eld
+\end_inset
+
+simulation
+\begin_inset Quotes erd
+\end_inset
+
+ object is added to the 
+\begin_inset Quotes eld
+\end_inset
+
+history table
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+- A number of rows corresponding to the number of cells present in the current
+ state of the simulation is added to the 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+2.
+ Save.
+ Takes output folder path as input.
+\end_layout
+
+\begin_layout Standard
+- A reasonably unique id is produced by taking the residual from the division
+ of the current timestamp by 1.000.000.000.
+ A folder that is named with this id is created in the 
+\begin_inset Quotes eld
+\end_inset
+
+output folder path
+\begin_inset Quotes erd
+\end_inset
+
+.
+ In this folder two files are created: 
+\begin_inset Quotes eld
+\end_inset
+
+history_{id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+cells_{id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+ where 
+\begin_inset Quotes eld
+\end_inset
+
+history table
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+ are saved in .tsv format.
+\end_layout
+
+\end_body
+\end_document
