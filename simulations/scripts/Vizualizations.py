@@ -36,6 +36,6 @@ class Visualizator:
 from pathlib import Path
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 visualizator = Visualizator(root_path=root_path, run_id=max(folders))
-visualizator.plot("generation", "n_cells")
+visualizator.plot("time_step", "n_cells")
 # visualizator.plot_age_distribution()
 # visualizator.plot_growth_rate()

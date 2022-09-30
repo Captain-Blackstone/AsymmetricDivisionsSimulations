@@ -107,34 +107,84 @@ CONFIG
 \begin_layout Standard
 
 \series bold
+Simulation Overview
+\end_layout
+
+\begin_layout Standard
+You are in charge of a chemostat with bacterial cells living in it.
+ Chemostat experiences constant dilutions, removing some of the cells.
+ The constant concentration of culture medium is maintained in the chemostat.
+ The rate of bacterial division is dependent on the uptake of the nutrients
+ from the medium.
+ Thus, the more bacteria live in the chemostat, the less is the nutrient
+ uptake and consecuently the division rate.
+\end_layout
+
+\begin_layout Standard
+You can choose the volume of the chemostat (
+\begin_inset Formula $V$
+\end_inset
+
+), the rate its of dilution (
+\begin_inset Formula $D$
+\end_inset
+
+).
+ You can also choose the parameters of individual cells that affect their
+ growth rates - the rate of the nutrients uptake (
+\begin_inset Formula $k$
+\end_inset
+
+) and the amount of nutrient in a cell sufficient for division (
+\begin_inset Formula $\alpha)$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+
+\series bold
 Cells
 \end_layout
 
 \begin_layout Standard
-Each cell has 5 attributes:
+Each cell has 7 attributes:
 \end_layout
 
 \begin_layout Standard
 1.
- cell id (integer) - unique identifier of a cell; it is given to a cell
- when the cell is born;
+ chemostat (Chemostat) - the chemostat where the cell is located;
 \end_layout
 
 \begin_layout Standard
 2.
+ cell id (integer) - unique identifier of a cell; it is given to a cell
+ when it is born;
+\end_layout
+
+\begin_layout Standard
+3.
+ parent id (integer) - cell id of a mother cell.
+ If there was no mother cell, the attribute is set to None;
+\end_layout
+
+\begin_layout Standard
+4.
  age (integer) - number of generations passed since this cell was born (=
  its mother cell divided); when the cell is born it is equal to 0;
 \end_layout
 
 \begin_layout Standard
-3.
+5.
  probability of division (float) - the probability for a cell to divide
  in the current generation.
  This property is calculated from the cell age with the following formula:
 \end_layout
 
 \begin_layout Standard
-\begin_inset Formula $P=\frac{gamma(age,\alpha,\beta)}{1-\int_{0}^{age}gamma(x,\alpha,\beta)dx}$
+\begin_inset Formula $P=\frac{gamma(age,\alpha,k/N)}{1-\int_{0}^{age}gamma(x,\alpha,k/N)dx}$
 \end_inset
 
 , where 
@@ -142,21 +192,25 @@ Each cell has 5 attributes:
 \end_inset
 
  and 
-\begin_inset Formula $\beta$
+\begin_inset Formula $k$
 \end_inset
 
- are taken from CONFIG.
+ are taken from CONFIG and 
+\begin_inset Formula $N$
+\end_inset
+
+ is the population size.
  
 \end_layout
 
 \begin_layout Standard
-4.
+6.
  has reproduced (boolean) - whether the cell reproduced in the current generatio
 n or not; when the cell is born it is set to False;
 \end_layout
 
 \begin_layout Standard
-5.
+7.
  has died (boolean) - whether cell has died in the current generation or
  not; when the cell is born it is set to False.
 \end_layout
@@ -192,8 +246,8 @@ has reproduced
 \end_inset
 
  attribute is set to True.
- The daughter cells have cell id of mother cell and offspring id as their
- cell ids.
+ The daughter cells have cell id of offspring id and offspring id +1 as
+ their cell ids.
  If it is greater than probability of division, 
 \begin_inset Quotes eld
 \end_inset
@@ -304,7 +358,7 @@ number of cells
 \begin_inset Quotes erd
 \end_inset
 
- - 1).
+ - 1) and the chemostat attribute set to the current chemostat object.
 \end_layout
 
 \begin_layout Standard
@@ -343,17 +397,25 @@ Simulation has 2 attributes:
 \end_layout
 
 \begin_layout Standard
-- Chemostat (Chemostat); when simulation is created it is supplied with
+- chemostat (Chemostat); when simulation is created it is supplied with
  one;
 \end_layout
 
 \begin_layout Standard
-- History (History); the object that contains all the history of the simulation.
- Blank at the start.
+- history (History); the object that contains all the history of the simulation.
+ Blank at the start, attribute 
+\begin_inset Quotes eld
+\end_inset
+
+save_path
+\begin_inset Quotes erd
+\end_inset
+
+ is set to the value supplied to the simulation when it is created.
 \end_layout
 
 \begin_layout Standard
-- Current maximum id (integer) - the maxium id of the cells of the simulation's
+- current maximum id (integer) - the maxium id of the cells of the simulation's
  chemostat.
  Calculated based on the chemostat object.
 \end_layout
@@ -377,12 +439,30 @@ number of steps
 \begin_inset Quotes erd
 \end_inset
 
- steps of a simulation.
+ steps of a simulation (each step receives 
+\begin_inset Quotes eld
+\end_inset
+
+step_number
+\begin_inset Quotes erd
+\end_inset
+
+ from 0 to number of steps as input).
+ After that history object performs the action 
+\begin_inset Quotes eld
+\end_inset
+
+save
+\begin_inset Quotes erd
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Standard
 2.
  Step.
+ Takes step_number as input.
 \end_layout
 
 \begin_layout Standard
@@ -441,7 +521,7 @@ record
 \begin_inset Quotes erd
 \end_inset
 
- action;
+ action with step_number as input;
 \end_layout
 
 \begin_layout Standard
@@ -468,31 +548,89 @@ History
 \end_layout
 
 \begin_layout Standard
-History has 3 attributes:
-\end_layout
-
-\begin_layout Standard
-- simulation (Simulation) - a simulation object the history object is linked
- to;
-\end_layout
-
-\begin_layout Standard
-- history table (data frame) - table that stores the information about the
- number of cells at each generation; Rows: generation, n_cells.
-\end_layout
-
-\begin_layout Standard
-- cells table (data frame) - table that stores the information about all
- the cells at each generation.
- Rows: generation, cell_id, cell_age, cell_damage, has_divided, has_died.
-\end_layout
-
-\begin_layout Standard
-History has two actions:
+History has 6 attributes:
 \end_layout
 
 \begin_layout Standard
 1.
+ simulation (Simulation) - a simulation object the history object is linked
+ to;
+\end_layout
+
+\begin_layout Standard
+2.
+ save path (string) - path where folder with history tables will be created;
+\end_layout
+
+\begin_layout Standard
+3.
+ run id (integer) - the timestamp of a moment when History object was created.
+ Used to name the output folder and output files.
+ The output folder in 
+\begin_inset Quotes eld
+\end_inset
+
+save path
+\begin_inset Quotes erd
+\end_inset
+
+ with name 
+\begin_inset Quotes eld
+\end_inset
+
+run id
+\begin_inset Quotes erd
+\end_inset
+
+ is created as soon as 
+\begin_inset Quotes eld
+\end_inset
+
+run id
+\begin_inset Quotes erd
+\end_inset
+
+ is assigned.
+\end_layout
+
+\begin_layout Standard
+4.
+ history table (data frame) - table that stores the information about the
+ number of cells at each time step; Columns: time_step, n_cells.
+\end_layout
+
+\begin_layout Standard
+5.
+ cells table (data frame) - table that stores the information about all
+ the cells at each generation.
+ Columns: generation, cell_id, cell_age, cell_damage, has_divided, has_died.
+\end_layout
+
+\begin_layout Standard
+6.
+ genealogy table (data frame) - table that tracks the genealogy for the
+ simulation.
+ All the cells that were ever present in the simulattion have a corresponding
+ row in this table.
+ Columns: cell_id, parent_id.
+\end_layout
+
+\begin_layout Standard
+History has three actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Reset
+\end_layout
+
+\begin_layout Standard
+- Reinitialize history table, cells table and genealogy tables as blank
+ tables.
+\end_layout
+
+\begin_layout Standard
+2.
  Record
 \end_layout
 
@@ -530,48 +668,20 @@ cells table
 \end_layout
 
 \begin_layout Standard
-2.
- Save.
- Takes output folder path as input.
-\end_layout
-
-\begin_layout Standard
-- A reasonably unique id is produced by taking the residual from the division
- of the current timestamp by 1.000.000.000.
- A folder that is named with this id is created in the 
+- A number of rows corresponding to the number of cells that were not previously
+ recorded is added to the 
 \begin_inset Quotes eld
 \end_inset
 
-output folder path
+genealogy table
 \begin_inset Quotes erd
 \end_inset
 
 .
- In this folder two files are created: 
-\begin_inset Quotes eld
-\end_inset
+\end_layout
 
-history_{id}.tsv
-\begin_inset Quotes erd
-\end_inset
-
- and 
-\begin_inset Quotes eld
-\end_inset
-
-cells_{id}.tsv
-\begin_inset Quotes erd
-\end_inset
-
- where 
-\begin_inset Quotes eld
-\end_inset
-
-history table
-\begin_inset Quotes erd
-\end_inset
-
- and 
+\begin_layout Standard
+- If 
 \begin_inset Quotes eld
 \end_inset
 
@@ -579,7 +689,80 @@ cells table
 \begin_inset Quotes erd
 \end_inset
 
+ size exceeds 10000, 
+\begin_inset Quotes eld
+\end_inset
+
+save
+\begin_inset Quotes erd
+\end_inset
+
+ action is performed.
+ This is needed to limit the REM consumption of the running script (high
+ REM consumption slows down the simulation).
+\end_layout
+
+\begin_layout Standard
+3.
+ Save.
+ Takes output folder path as input.
+\end_layout
+
+\begin_layout Standard
+- If not present, in the output folder three files are created: 
+\begin_inset Quotes eld
+\end_inset
+
+history_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+, 
+\begin_inset Quotes eld
+\end_inset
+
+cells_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+genealogy_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+, where 
+\begin_inset Quotes eld
+\end_inset
+
+history table
+\begin_inset Quotes erd
+\end_inset
+
+, 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+genealogy table
+\begin_inset Quotes erd
+\end_inset
+
  are saved in .tsv format.
+ Is present, the tables are appended to these files without overwriting.
+\end_layout
+
+\begin_layout Standard
+- Reset action is performed.
 \end_layout
 
 \end_body
