@@ -95,7 +95,7 @@ DONE:
 		- Specification:	
 			- Each cell starts with d amount of damage.
 			- A cell accumulates k amount of damage during its life.
-			- Upon division, one offspring gets 0.5*(1+a)(k+d)/2 of damage, and another one 0.5*(1-a)(k+d)/2 of damage. A range from 0 (total symmetry) from 1 (total assymmetry).
+			- Upon division, one offspring gets 0.5*(1+a)(k+d) of damage, and another one 0.5*(1-a)(k+d) of damage. A range from 0 (total symmetry) from 1 (total assymmetry).
 		- Observations:	
 			- In a population of totally symmetric divisers the equilibrium amount of damage is k at the start of the generation and 2k at the end (then cells divide and 2k of damage is distributed between twice as many cells so that each cell receives k of damage).
 			- In a fully assymmetric population each has 0, k, 2k, 3k... of damage. We therefore can distinguish individuals that live through generations. The birthdate is a generation where a cell has 0 damage and the age is then equals (damage)/k + 1. 

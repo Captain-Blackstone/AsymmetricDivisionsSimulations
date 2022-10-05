@@ -1,13 +1,3 @@
-
-
-"""
-
-Next, please do write up a lyx file (if you don't mind) or otherwise just a plain text document specifying exactly what
-you do in pseudocode, so we can both easily refer to the algorithm. Currently, the cell number is constant for many
-time steps (I suppose because the dilution rate is 0.1% correct?) and then abruptly jumps, so I think the next order of
-business is to take care of the synchronization.
-"""
-
 import pandas as pd
 import sys
 import datetime
@@ -20,7 +10,7 @@ class Chemostat:
     def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
         self.V = volume_val
         self.D = dilution_rate
-        self.cells = []
+        self._cells = []
         if n_cells:
             self.populate_with_cells(n_cells)
 
@@ -28,8 +18,12 @@ class Chemostat:
     def N(self) -> int:
         return len(self.cells)
 
+    @property
+    def cells(self) -> list:
+        return self._cells
+
     def populate_with_cells(self, n_cells: int) -> None:
-        self.cells += [Cell(chemostat=self, cell_id=i) for i in range(n_cells)]
+        self._cells += [Cell(chemostat=self, cell_id=i) for i in range(n_cells)]
 
     def dilute(self) -> None:
         expected_n_cells_to_remove = self.D * self.N/self.V
@@ -38,22 +32,31 @@ class Chemostat:
         for cell in dead_cells:
             cell.die()
 
+    @cells.setter
+    def cells(self, cells):
+        self._cells = cells
+
 
 class Cell:
     critical_amount = 10
-    rate_of_accumulation = 1
+    nutrient_accumulation_rate = 1
+    damage_accumulation_rate = 0.1
 
     def __init__(self,
                  chemostat: Chemostat,
                  cell_id: int,
                  parent_id=None,
-                 age=0):
+                 asymmetry=0.0,
+                 age=0,
+                 damage=0.0):
         self.chemostat = chemostat
-        self.id = cell_id
-        self.parent_id = parent_id
-        self.age = age
-        self.has_reproduced = False
-        self.has_died = False
+        self._id = cell_id
+        self._parent_id = parent_id
+        self._age = age
+        self._damage = damage
+        self._asymmetry = asymmetry
+        self._has_reproduced = False
+        self._has_died = False
 
     @property
     def prob_of_division(self) -> float:
@@ -66,16 +69,77 @@ class Cell:
         return gamma.pdf(self.age, a=alpha, scale=1/beta) / max(1 - gamma.cdf(self.age, a=alpha, scale=1/beta),
                                                                 gamma.pdf(self.age, a=alpha, scale=1/beta))
 
+    def live(self) -> None:
+        self._age += 1
+        self._damage += Cell.damage_accumulation_rate
+
     def reproduce(self, offspring_id: int) -> list:
-        self.has_reproduced = np.random.uniform(0, 1) < self.prob_of_division
+        self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division
         if self.has_reproduced:
-            return [Cell(chemostat=self.chemostat, cell_id=offspring_id, parent_id=self.id),
-                    Cell(chemostat=self.chemostat, cell_id=offspring_id+1, parent_id=self.id)]
+            return [Cell(chemostat=self.chemostat,
+                         cell_id=offspring_id,
+                         parent_id=self.id,
+                         asymmetry=self.asymmetry,
+                         damage=self.damage*(1+self.asymmetry)/2),
+                    Cell(chemostat=self.chemostat,
+                         cell_id=offspring_id+1,
+                         parent_id=self.id,
+                         asymmetry=self.asymmetry,
+                         damage=self.damage*(1-self.asymmetry)/2)]
         else:
             return [self]
 
     def die(self) -> None:
-        self.has_died = True
+        self._has_died = True
+
+    @property
+    def id(self) -> int:
+        """
+        :return: a unique id of a cell
+        """
+        return self._id
+
+    @property
+    def parent_id(self) -> int:
+        """
+        :return: id of the parent cell
+        """
+        return self._parent_id
+
+    @property
+    def age(self) -> int:
+        """
+        :return: number of time steps passed since the timestep of cell's birth
+        """
+        return self._age
+
+    @property
+    def asymmetry(self) -> float:
+        """
+        :return: the asymmetry value of a cell. Impacts the damage inheritance of the daughter cells.
+        The inherited damage for daughter cells is calculated as damage*(1+asymmetry)/2 and damage*(1-asymmetry)/2
+        """
+        return self._asymmetry
+    @property
+    def damage(self) -> float:
+        """
+        :return: amount of somatic damage accumulated by the cell
+        """
+        return self._damage
+
+    @property
+    def has_reproduced(self) -> bool:
+        """
+        :return: if cell has reproduced at the current time step
+        """
+        return self._has_reproduced
+
+    @property
+    def has_died(self) -> bool:
+        """
+        :return: if cell has died at the current time step
+        """
+        return self._has_died
 
 
 class Simulation:
@@ -87,7 +151,7 @@ class Simulation:
     def current_max_id(self) -> int:
         return max([cell.id for cell in self.chemostat.cells])
 
-    def step(self, step_number: int) -> None:
+    def _step(self, step_number: int) -> None:
         # Cells are diluted
         self.chemostat.dilute()
 
@@ -104,15 +168,16 @@ class Simulation:
 
         # Time passes
         for cell in self.chemostat.cells:
-            cell.age += 1
+            cell.live()
 
     def run(self, n_steps: int) -> None:
         for step_number in range(n_steps):
-            self.step(step_number)
+            self._step(step_number)
         self.history.save()
 
 
 class History:
+
     def __init__(self, simulation_obj: Simulation, save_path: str):
         self.simulation = simulation_obj
 
@@ -141,6 +206,7 @@ class History:
             {"time_step": [time_step for _ in range(len(cells))],
              "cell_id": [cell.id for cell in cells],
              "cell_age": [cell.age for cell in cells],
+             "cell_damage": [cell.damage for cell in cells],
              "has_divided": [cell.has_reproduced for cell in cells],
              "has_died": [cell.has_died for cell in cells]
              })
@@ -148,7 +214,8 @@ class History:
         self.cells_table = pd.concat([self.cells_table, df_to_add], ignore_index=True)
 
         # Make a record in genealogy_table
-        cells = list(filter(lambda el: el.id not in self.genealogy_table.cell_id, self.simulation.chemostat.cells))
+        cells = list(filter(lambda el: el.id not in self.genealogy_table.cell_id,
+                            self.simulation.chemostat.cells))
         df_to_add = pd.DataFrame.from_dict(
             {"cell_id": [cell.id for cell in cells],
              "parent_id": [cell.parent_id for cell in cells],
@@ -173,7 +240,9 @@ class History:
 
 
 if __name__ == "__main__":
-    volume, dilution_rate = map(int, sys.argv[1:3])
+    critical_amount, nutrient_accumulation_rate, volume, dilution_rate = map(int, sys.argv[1:5])
+    Cell.critical_amount = critical_amount
+    Cell.rate_of_accumulation = nutrient_accumulation_rate
     simulation = Simulation(Chemostat(volume_val=volume,
                                       dilution_rate=dilution_rate,
                                       n_cells=1),

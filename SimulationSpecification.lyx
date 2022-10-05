@@ -84,10 +84,18 @@ CONFIG
 \end_layout
 
 \begin_layout Standard
-\begin_inset Formula $\alpha,\beta$
+\begin_inset Formula $\alpha$
 \end_inset
 
- - parameters of gamma distribution (float)
+ - critical amount of nutrient required for a cell division (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $k$
+\end_inset
+
+ - rate of accumulation of the nutrient by a single cell in the absence
+ of any other cells in the environment (float)
 \end_layout
 
 \begin_layout Standard
@@ -150,7 +158,37 @@ Cells
 \end_layout
 
 \begin_layout Standard
-Each cell has 7 attributes:
+All cells have the 3 common attributes:
+\end_layout
+
+\begin_layout Standard
+- critical amount (float) - critical amount of nutrient required for a cell
+ division.
+ Is set to 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ at the start of a simulation;
+\end_layout
+
+\begin_layout Standard
+- nutrient_accumulation_rate (float) - rate of accumulation of the nutrient
+ by a single cell in the absence of any other cells in the environment.
+ Is set to 
+\begin_inset Formula $k$
+\end_inset
+
+ at the start of a simulation.
+\end_layout
+
+\begin_layout Standard
+- damage_accumulation_rate (float) - rate of damage accumulation during
+ one time step.
+ 
+\end_layout
+
+\begin_layout Standard
+Each cell has 9 individual attributes:
 \end_layout
 
 \begin_layout Standard
@@ -184,7 +222,7 @@ Each cell has 7 attributes:
 \end_layout
 
 \begin_layout Standard
-\begin_inset Formula $P=\frac{gamma(age,\alpha,k/N)}{1-\int_{0}^{age}gamma(x,\alpha,k/N)dx}$
+\begin_inset Formula $P=\frac{gamma(age,\alpha+1,k/N)}{1-\int_{0}^{age}gamma(x,\alpha+1,k/N)dx}$
 \end_inset
 
 , where 
@@ -199,18 +237,40 @@ Each cell has 7 attributes:
 \begin_inset Formula $N$
 \end_inset
 
- is the population size.
- 
+ is the population size; 
 \end_layout
 
 \begin_layout Standard
 6.
+ damage (float) - amount of damage accumulated by the cell;
+\end_layout
+
+\begin_layout Standard
+7.
+ asymmetry (float) - the asymmetry of damage inheritence by the daugther
+ cells;
+\begin_inset Formula $0\leq asymmetry\leq1$
+\end_inset
+
+, 
+\begin_inset Formula $asymmetry=0$
+\end_inset
+
+ is total symmetry, 
+\begin_inset Formula $asymmetry=1$
+\end_inset
+
+ is full asymmetry; 
+\end_layout
+
+\begin_layout Standard
+8.
  has reproduced (boolean) - whether the cell reproduced in the current generatio
 n or not; when the cell is born it is set to False;
 \end_layout
 
 \begin_layout Standard
-7.
+9.
  has died (boolean) - whether cell has died in the current generation or
  not; when the cell is born it is set to False.
 \end_layout
@@ -236,8 +296,8 @@ offspring id
 
 \begin_layout Standard
 - A random number is generated.
- If this number is less than probability of division of this cell, the cell
- produces two daughter cells and its 
+ If this number is less than probability of division of this cell, the reproduct
+ion happens: the cell produces two daughter cells and its 
 \begin_inset Quotes eld
 \end_inset
 
@@ -246,9 +306,27 @@ has reproduced
 \end_inset
 
  attribute is set to True.
- The daughter cells have cell id of offspring id and offspring id +1 as
- their cell ids.
- If it is greater than probability of division, 
+ The daughter cells have cell id of offspring id and offspring id + 1 as
+ their cell ids; asymmetry attribute values of the daughter cells are equal
+ to the mother's asymmetry value; the inherited damage is is calculated
+ as 
+\begin_inset Formula $\frac{(1+a)}{2}*d$
+\end_inset
+
+ for the first offspring and 
+\begin_inset Formula $\frac{(1-a)}{2}*d$
+\end_inset
+
+ for the second one, where 
+\begin_inset Formula $a$
+\end_inset
+
+ and 
+\begin_inset Formula $d$
+\end_inset
+
+ are asymmetry and damage values for the mohter cell respecitvely.
+ If the reproduction does not happend, 
 \begin_inset Quotes eld
 \end_inset
 
@@ -261,6 +339,43 @@ has reproduced
 
 \begin_layout Standard
 2.
+ Live
+\end_layout
+
+\begin_layout Standard
+- Increment 
+\begin_inset Quotes eld
+\end_inset
+
+age
+\begin_inset Quotes erd
+\end_inset
+
+ attribute by 1;
+\end_layout
+
+\begin_layout Standard
+- Increment 
+\begin_inset Quotes eld
+\end_inset
+
+damage
+\begin_inset Quotes erd
+\end_inset
+
+ attribute by 
+\begin_inset Quotes eld
+\end_inset
+
+damage accumulation rate
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+3.
  Die
 \end_layout
 
