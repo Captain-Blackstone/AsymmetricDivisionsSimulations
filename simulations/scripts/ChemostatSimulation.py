@@ -4,7 +4,7 @@ import datetime
 from pathlib import Path
 from scipy.stats import gamma
 import numpy as np
-
+from tqdm import tqdm
 
 class Chemostat:
     def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
@@ -30,7 +30,7 @@ class Chemostat:
         n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove, 1)[0]
         dead_cells = np.random.choice(self.cells, size=min(self.N, n_cells_to_remove), replace=False)
         for cell in dead_cells:
-            cell.die()
+            cell.die(cause="dilution")
 
     @cells.setter
     def cells(self, cells):
@@ -41,6 +41,7 @@ class Cell:
     critical_amount = 10
     nutrient_accumulation_rate = 1
     damage_accumulation_rate = 0.1
+    critical_damage_threshold = 180
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -56,7 +57,7 @@ class Cell:
         self._damage = damage
         self._asymmetry = asymmetry
         self._has_reproduced = False
-        self._has_died = False
+        self._has_died = ""
 
     @property
     def prob_of_division(self) -> float:
@@ -72,6 +73,8 @@ class Cell:
     def live(self) -> None:
         self._age += 1
         self._damage += Cell.damage_accumulation_rate
+        # if self.damage > Cell.critical_damage_threshold:
+        #     self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
         self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division
@@ -89,8 +92,8 @@ class Cell:
         else:
             return [self]
 
-    def die(self) -> None:
-        self._has_died = True
+    def die(self, cause: str) -> None:
+        self._has_died = cause
 
     @property
     def id(self) -> int:
@@ -135,7 +138,7 @@ class Cell:
         return self._has_reproduced
 
     @property
-    def has_died(self) -> bool:
+    def has_died(self) -> str:
         """
         :return: if cell has died at the current time step
         """
@@ -171,8 +174,9 @@ class Simulation:
             cell.live()
 
     def run(self, n_steps: int) -> None:
-        for step_number in range(n_steps):
+        for step_number in tqdm(range(n_steps)):
             self._step(step_number)
+            # print(step_number)
         self.history.save()
 
 
@@ -222,7 +226,7 @@ class History:
              })
         self.genealogy_table = pd.concat([self.genealogy_table, df_to_add], ignore_index=True)
 
-        if len(self.cells_table) > 10000:
+        if len(self.cells_table) > 5000:
             self.save()
 
     def save(self) -> None:
@@ -247,4 +251,4 @@ if __name__ == "__main__":
                                       dilution_rate=dilution_rate,
                                       n_cells=1),
                             save_path="../data/")
-    simulation.run(10000)
+    simulation.run(5000)

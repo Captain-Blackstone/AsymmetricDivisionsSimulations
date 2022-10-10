@@ -9,11 +9,12 @@ class Visualizator:
         self.history_table = pd.read_csv(root_path + f"{run_id}/history_{run_id}.tsv", sep="\t")
         self.cell_table = pd.read_csv(root_path + f"{run_id}/cells_{run_id}.tsv", sep="\t")
 
-    def plot(self, x_feature, y_feature):
+    def plot(self, x_feature, y_feature, show=True):
         plt.plot(self.history_table[x_feature], self.history_table[y_feature])
         plt.xlabel(x_feature)
         plt.ylabel(y_feature)
-        plt.show()
+        if show:
+            plt.show()
 
     def plot_age_distribution(self):
         xx = list(range(self.cell_table.generation.min(), self.cell_table.generation.max()+1))
@@ -33,24 +34,39 @@ class Visualizator:
         plt.plot(xx, yy)
         plt.show()
 
-    def plot_mean_feature(self, feature, condition=True):
+    def plot_mean_feature(self, feature, condition=True, show=True):
         yy = [self.cell_table.loc[(self.cell_table.time_step == time_step) & condition, feature].mean()
               for time_step in self.cell_table.time_step.unique()]
         xx = [el for el in range(len(yy)) if yy[el] is not np.nan]
         yy = [y for y in yy if y is not np.nan]
-        plt.plot(xx, yy)
+        plt.plot(xx, yy, )
         plt.xlabel("time_step")
         plt.ylabel(f"mean {feature}")
-        plt.show()
+        if show:
+            plt.show()
+
 
 from pathlib import Path
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
-visualizator = Visualizator(root_path=root_path, run_id=max(folders))
-# visualizator.plot("time_step", "n_cells")
+
+# visualizator = Visualizator(root_path=root_path, run_id=1664973501)
+# visualizator.plot("time_step", "n_cells", show=False)
+# visualizator.plot_mean_feature("cell_damage", show=False)
+# visualizator.plot_mean_feature("cell_age", show=False)
+
+# visualizator = Visualizator(root_path=root_path, run_id=max(folders))
+visualizator = Visualizator(root_path=root_path, run_id=1665232310)
+# visualizator.plot("time_step", "n_cells", show=False)
+# visualizator.plot_mean_feature("cell_damage", show=False)
+# visualizator.plot_mean_feature("cell_age", show=False)
+
 # visualizator.plot_age_distribution()
-visualizator.plot_growth_rate()
+# visualizator.plot_growth_rate()
 # visualizator.plot_mean_feature("cell_damage")
-# visualizator.plot_mean_feature("cell_age", visualizator.cell_table.has_divided == True)
-# visualizator.plot_mean_feature("cell_age")
+# visualizator.plot_mean_feature("cell_age", visualizator.cell_table.has_divided == True, show=False)
+visualizator.plot_mean_feature("cell_age", show=False)
+# visualizator.plot_mean_feature("cell_damage", visualizator.cell_table.has_divided == True, show=False)
+plt.grid()
+plt.show()
 
-
+# visualizator.plot_mean_feature("cell_age", show=True)
