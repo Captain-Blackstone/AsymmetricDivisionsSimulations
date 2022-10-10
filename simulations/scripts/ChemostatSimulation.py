@@ -5,6 +5,8 @@ from pathlib import Path
 from scipy.stats import gamma
 import numpy as np
 from tqdm import tqdm
+import multiprocessing
+
 
 class Chemostat:
     def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
@@ -123,6 +125,7 @@ class Cell:
         The inherited damage for daughter cells is calculated as damage*(1+asymmetry)/2 and damage*(1-asymmetry)/2
         """
         return self._asymmetry
+
     @property
     def damage(self) -> float:
         """
@@ -146,9 +149,42 @@ class Cell:
 
 
 class Simulation:
-    def __init__(self, chemostat_obj: Chemostat, save_path: str):
+    def __init__(self, volume_val: float, dilution_rate: float,
+                 n_starting_cells: int, save_path: str, n_threads=1, n_procs=1):
+        run_id = round(datetime.datetime.now().timestamp())
+        self.threads = [SimulationThread(run_id=run_id, thread_id=i+1,
+                                         chemostat_obj=Chemostat(volume_val=volume_val,
+                                                                 dilution_rate=dilution_rate,
+                                                                 n_cells=n_starting_cells),
+                                         save_path=save_path) for i in range(n_threads)]
+        self.n_procs = n_procs
+
+    def run_thread(self, thread_number: int, n_steps: int) -> None:
+        self.threads[thread_number].run(n_steps=n_steps)
+
+    def run(self, n_steps: int) -> None:
+        if self.n_procs == 1:
+            for thread in self.threads:
+                thread.run(n_steps=n_steps)
+        elif self.n_procs > 1:
+            for i in tqdm(range(0, len(self.threads), self.n_procs)):
+                processes = []
+                for j in range(i, min(i+self.n_procs, len(self.threads))):
+                    processes.append(multiprocessing.Process(target=self.run_thread,
+                                                             args=(j, n_steps)))
+                for process in processes:
+                    process.start()
+                for process in processes:
+                    process.join()
+
+
+class SimulationThread:
+    def __init__(self, run_id: int, thread_id: int, chemostat_obj: Chemostat, save_path: str):
         self.chemostat = chemostat_obj
-        self.history = History(self, save_path)
+        self.history = History(self,
+                               save_path=save_path,
+                               run_id=run_id,
+                               thread_id=thread_id)
 
     @property
     def current_max_id(self) -> int:
@@ -176,19 +212,20 @@ class Simulation:
     def run(self, n_steps: int) -> None:
         for step_number in tqdm(range(n_steps)):
             self._step(step_number)
-            # print(step_number)
         self.history.save()
 
 
 class History:
-
-    def __init__(self, simulation_obj: Simulation, save_path: str):
-        self.simulation = simulation_obj
-
-        self.save_path = save_path
-        self.run_id = round(datetime.datetime.now().timestamp())
-        (Path(self.save_path) / Path(str(self.run_id))).mkdir()
-
+    def __init__(self,
+                 simulation_obj: SimulationThread,
+                 save_path: str,
+                 run_id: int,
+                 thread_id: int):
+        self.simulation_thread = simulation_obj
+        self.run_id = run_id
+        (Path(save_path) / Path(str(self.run_id))).mkdir(exist_ok=True)
+        self.save_path = f"{save_path}/{self.run_id}"
+        self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
         self.reset()
 
@@ -201,11 +238,11 @@ class History:
     def record(self, time_step) -> None:
         # Make a record history_table
         row = pd.DataFrame.from_dict(
-            {"time_step": [time_step], "n_cells": [self.simulation.chemostat.N]})
+            {"time_step": [time_step], "n_cells": [self.simulation_thread.chemostat.N]})
         self.history_table = pd.concat([self.history_table, row], ignore_index=True)
 
         # Make a record in cells_table
-        cells = self.simulation.chemostat.cells
+        cells = self.simulation_thread.chemostat.cells
         df_to_add = pd.DataFrame.from_dict(
             {"time_step": [time_step for _ in range(len(cells))],
              "cell_id": [cell.id for cell in cells],
@@ -219,7 +256,7 @@ class History:
 
         # Make a record in genealogy_table
         cells = list(filter(lambda el: el.id not in self.genealogy_table.cell_id,
-                            self.simulation.chemostat.cells))
+                            self.simulation_thread.chemostat.cells))
         df_to_add = pd.DataFrame.from_dict(
             {"cell_id": [cell.id for cell in cells],
              "parent_id": [cell.parent_id for cell in cells],
@@ -232,7 +269,7 @@ class History:
     def save(self) -> None:
         for table, stem in zip([self.history_table, self.cells_table, self.genealogy_table],
                                ["history", "cells", "genealogy"]):
-            path = Path(f"{self.save_path}/{self.run_id}/{stem}_{self.run_id}.tsv")
+            path = Path(f"{self.save_path}/{stem}_{self.run_id}_{self.thread_id}.tsv")
             if path.exists():
                 table.to_csv(path, mode="a", sep="\t", index=False, header=False)
             else:
@@ -247,8 +284,8 @@ if __name__ == "__main__":
     critical_amount, nutrient_accumulation_rate, volume, dilution_rate = map(int, sys.argv[1:5])
     Cell.critical_amount = critical_amount
     Cell.rate_of_accumulation = nutrient_accumulation_rate
-    simulation = Simulation(Chemostat(volume_val=volume,
-                                      dilution_rate=dilution_rate,
-                                      n_cells=1),
-                            save_path="../data/")
-    simulation.run(5000)
+    simulation = Simulation(volume_val=volume,
+                            dilution_rate=dilution_rate,
+                            n_starting_cells=1,
+                            save_path="../data/", n_threads=4, n_procs=2)
+    simulation.run(100)
