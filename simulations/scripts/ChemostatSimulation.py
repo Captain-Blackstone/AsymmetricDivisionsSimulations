@@ -6,7 +6,7 @@ from scipy.stats import gamma
 import numpy as np
 from tqdm import tqdm
 import multiprocessing
-
+import os
 
 class Chemostat:
     def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
@@ -43,7 +43,7 @@ class Cell:
     critical_amount = 10
     nutrient_accumulation_rate = 1
     damage_accumulation_rate = 0.1
-    critical_damage_threshold = 180
+    critical_damage_threshold = 80
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -75,8 +75,8 @@ class Cell:
     def live(self) -> None:
         self._age += 1
         self._damage += Cell.damage_accumulation_rate
-        # if self.damage > Cell.critical_damage_threshold:
-        #     self.die(cause="damage")
+        if self.damage > Cell.critical_damage_threshold:
+            self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
         self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division
@@ -210,6 +210,7 @@ class SimulationThread:
             cell.live()
 
     def run(self, n_steps: int) -> None:
+        np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
         for step_number in tqdm(range(n_steps)):
             self._step(step_number)
         self.history.save()
@@ -287,5 +288,5 @@ if __name__ == "__main__":
     simulation = Simulation(volume_val=volume,
                             dilution_rate=dilution_rate,
                             n_starting_cells=1,
-                            save_path="../data/", n_threads=4, n_procs=2)
-    simulation.run(100)
+                            save_path="../data/", n_threads=10, n_procs=10)
+    simulation.run(10000)
