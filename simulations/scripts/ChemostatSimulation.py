@@ -7,6 +7,8 @@ import numpy as np
 from tqdm import tqdm
 import multiprocessing
 import os
+import json
+
 
 class Chemostat:
     def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
@@ -28,7 +30,7 @@ class Chemostat:
         self._cells += [Cell(chemostat=self, cell_id=i) for i in range(n_cells)]
 
     def dilute(self) -> None:
-        expected_n_cells_to_remove = self.D * self.N/self.V
+        expected_n_cells_to_remove = self.D * self.N / self.V
         n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove, 1)[0]
         dead_cells = np.random.choice(self.cells, size=min(self.N, n_cells_to_remove), replace=False)
         for cell in dead_cells:
@@ -40,10 +42,15 @@ class Chemostat:
 
 
 class Cell:
-    critical_amount = 10
+    # Nutrient accumulation
+    critical_nutrient_amount = 10
     nutrient_accumulation_rate = 1
+
+    # Damage accumulation
+    damage_accumulation_mode = "linear"
     damage_accumulation_rate = 0.1
-    critical_damage_threshold = 80
+    damage_accumulation_intercept = None
+    lethal_damage_threshold = 1000
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -67,15 +74,25 @@ class Cell:
         Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
         at a given age
         """
-        alpha = Cell.critical_amount + 1
-        beta = Cell.rate_of_accumulation/self.chemostat.N
-        return gamma.pdf(self.age, a=alpha, scale=1/beta) / max(1 - gamma.cdf(self.age, a=alpha, scale=1/beta),
-                                                                gamma.pdf(self.age, a=alpha, scale=1/beta))
+        alpha = Cell.critical_nutrient_amount + 1
+        beta = Cell.nutrient_accumulation_rate / self.chemostat.N
+        return gamma.pdf(self.age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(self.age, a=alpha, scale=1 / beta),
+                                                                  gamma.pdf(self.age, a=alpha, scale=1 / beta))
 
     def live(self) -> None:
         self._age += 1
-        self._damage += Cell.damage_accumulation_rate
-        if self.damage > Cell.critical_damage_threshold:
+        if Cell.damage_accumulation_mode == "linear":
+            self._damage += Cell.damage_accumulation_rate
+        elif Cell.damage_accumulation_mode == "nonlinear":
+            if Cell.damage_accumulation_intercept is not None:
+                self._damage += Cell.damage_accumulation_rate*self._damage + Cell.damage_accumulation_intercept
+            else:
+                raise ValueError(
+                    "Damage accumulation intercept cannot be None if damage accumulation mode is nonlinear"
+                )
+        else:
+            raise ValueError("Unknown damage accumulation mode")
+        if self.damage > Cell.lethal_damage_threshold:
             self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
@@ -85,12 +102,12 @@ class Cell:
                          cell_id=offspring_id,
                          parent_id=self.id,
                          asymmetry=self.asymmetry,
-                         damage=self.damage*(1+self.asymmetry)/2),
+                         damage=self.damage * (1 + self.asymmetry) / 2),
                     Cell(chemostat=self.chemostat,
-                         cell_id=offspring_id+1,
+                         cell_id=offspring_id + 1,
                          parent_id=self.id,
                          asymmetry=self.asymmetry,
-                         damage=self.damage*(1-self.asymmetry)/2)]
+                         damage=self.damage * (1 - self.asymmetry) / 2)]
         else:
             return [self]
 
@@ -149,15 +166,29 @@ class Cell:
 
 
 class Simulation:
-    def __init__(self, volume_val: float, dilution_rate: float,
-                 n_starting_cells: int, save_path: str, n_threads=1, n_procs=1):
+    def __init__(self, parameters: dict,
+                 n_starting_cells: int,
+                 save_path: str,
+                 n_threads=1, n_procs=1):
+        Cell.damage_accumulation_rate = parameters["cell_parameters"]["damage_accumulation_rate"]
+        Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
+        Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
+        Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
+        Cell.damage_accumulation_mode = parameters["cell_parameters"]["damage_accumulation_mode"]
+        Cell.damage_accumulation_intercept = parameters["cell_parameters"]["damage_accumulation_intercept"]
+
         run_id = round(datetime.datetime.now().timestamp())
-        self.threads = [SimulationThread(run_id=run_id, thread_id=i+1,
-                                         chemostat_obj=Chemostat(volume_val=volume_val,
-                                                                 dilution_rate=dilution_rate,
-                                                                 n_cells=n_starting_cells),
+        self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
+                                         chemostat_obj=Chemostat(
+                                             volume_val=parameters["chemostat_parameters"]["volume"],
+                                             dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
+                                             n_cells=n_starting_cells),
                                          save_path=save_path) for i in range(n_threads)]
         self.n_procs = n_procs
+
+        # Write parameters needed to identify simulation
+        with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
+            json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int, n_steps: int) -> None:
         self.threads[thread_number].run(n_steps=n_steps)
@@ -169,7 +200,7 @@ class Simulation:
         elif self.n_procs > 1:
             for i in tqdm(range(0, len(self.threads), self.n_procs)):
                 processes = []
-                for j in range(i, min(i+self.n_procs, len(self.threads))):
+                for j in range(i, min(i + self.n_procs, len(self.threads))):
                     processes.append(multiprocessing.Process(target=self.run_thread,
                                                              args=(j, n_steps)))
                 for process in processes:
@@ -197,7 +228,7 @@ class SimulationThread:
         # Alive cells reproduce
         new_cells = []
         for cell in filter(lambda cell_obj: not cell_obj.has_died, self.chemostat.cells):
-            new_cells += cell.reproduce(self.current_max_id+1)
+            new_cells += cell.reproduce(self.current_max_id + 1)
 
         # History is recorded
         self.history.record(step_number)
@@ -282,11 +313,21 @@ class History:
 
 
 if __name__ == "__main__":
-    critical_amount, nutrient_accumulation_rate, volume, dilution_rate = map(int, sys.argv[1:5])
-    Cell.critical_amount = critical_amount
-    Cell.rate_of_accumulation = nutrient_accumulation_rate
-    simulation = Simulation(volume_val=volume,
-                            dilution_rate=dilution_rate,
-                            n_starting_cells=1,
-                            save_path="../data/", n_threads=10, n_procs=10)
+    damage_accumulation_mode, damage_accumulation_intercept, damage_accumulation_rate, lethal_damage_threshold, \
+        critical_nutrient_amount, nutrient_accumulation_rate, volume, dilution_rate = sys.argv[1:9]
+    parameters = {
+        "chemostat_parameters": {
+            "volume": float(volume),
+            "dilution_rate": float(dilution_rate)
+        },
+        "cell_parameters": {
+            "damage_accumulation_mode": damage_accumulation_mode,
+            "damage_accumulation_intercept": float(damage_accumulation_intercept),
+            "damage_accumulation_rate": float(damage_accumulation_rate),
+            "lethal_damage_threshold": float(lethal_damage_threshold),
+            "nutrient_accumulation_rate": float(nutrient_accumulation_rate),
+            "critical_nutrient_amount": float(critical_nutrient_amount)
+        }
+    }
+    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path="../data/", n_threads=16, n_procs=8)
     simulation.run(10000)

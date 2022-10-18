@@ -9,7 +9,8 @@ root_path = "/home/blackstone/PycharmProjects/NIH/AsymmetricDivisions/simulation
 class Visualizator:
     def __init__(self,
                  root_path: str,
-                 run_id: int):
+                 run_id: int,
+                 color="blue", label = ""):
         files = [file.stem for file in Path(root_path + str(run_id)).glob("*.tsv")]
         n_threads = max([int(file.split("_")[-1]) for file in files])
         self.history_tables = [pd.read_csv(root_path + f"{run_id}/history_{run_id}_{i}.tsv", sep="\t")
@@ -18,31 +19,29 @@ class Visualizator:
                             for i in range(1, n_threads+1)]
         self.genealogy_tables = [pd.read_csv(root_path + f"{run_id}/genealogy_{run_id}_{i}.tsv", sep="\t")
                                  for i in range(1, n_threads + 1)]
+        self.color = color
+        if label == "":
+            label = run_id
+        self.label = label
 
     def plot(self, x_feature, y_feature, show=True):
         yy_sorted = []
-        yy_max = []
-        yy_min = []
-        yy_mean = []
         xx = self.history_tables[0][x_feature]
         for x in xx:
             yy = np.array([list(self.history_tables[i].loc[self.history_tables[i][x_feature] == x,
                                                            y_feature])[0] for i in range(len(self.history_tables))])
+            yy_sorted.append(np.array(sorted(yy)))
+        plt.fill_between(xx,
+                         [el[int(len(yy_sorted[0])*0.2)-1] for el in yy_sorted],
+                         [el[int(len(yy_sorted[0])*0.8)-1] for el in yy_sorted], color=self.color,
+                         alpha=0.1, label=self.label)
+        plt.plot(xx, [el.mean() for el in yy_sorted], color="red")
 
-            yy_min.append(yy.min())
-            yy_max.append(yy.max())
-            yy_mean.append(yy.mean())
-            yy_sorted.append(sorted(yy))
-        for i in range(len(yy_sorted[0])):
-            plt.fill_between(xx, [el[i] for el in yy_sorted], yy_mean, color="blue", alpha=0.2)
-        # plt.fill_between(xx, yy_min, yy_max, color="blue", alpha=0.5)
-        plt.plot(xx, yy_mean, color="red")
-
-        # for history_table in self.history_tables:
-        #     plt.plot(history_table[x_feature], history_table[y_feature], color="blue")
         plt.xlabel(x_feature)
         plt.ylabel(y_feature)
         if show:
+            plt.grid()
+            plt.legend()
             plt.show()
 
     def plot_age_distribution(self):
@@ -66,26 +65,33 @@ class Visualizator:
         plt.show()
 
     def plot_mean_feature(self, feature, condition=True, show=True):
-        for cell_table in self.cell_tables:
-            yy = [cell_table.loc[(cell_table.time_step == time_step) & condition, feature].mean()
-                  for time_step in cell_table.time_step.unique()]
-            xx = [el for el in range(len(yy)) if yy[el] is not np.nan]
-            yy = [y for y in yy if y is not np.nan]
-            plt.plot(xx, yy, color="blue")
+        yy_sorted = []
+        xx = sorted(self.cell_tables[0]["time_step"].unique())
+        for x in xx:
+            yy = [self.cell_tables[i].
+                  loc[(self.cell_tables[i].time_step == x) & condition, feature].mean()
+                  for i in range(len(self.history_tables))]
+            yy_sorted.append(sorted(yy))
+        plt.fill_between(xx,
+                         [el[int(len(yy_sorted[0]) * 0.2) - 1] for el in yy_sorted],
+                         [el[int(len(yy_sorted[0]) * 0.8) - 1] for el in yy_sorted],
+                         color=self.color, alpha=0.1, label=self.label)
         plt.xlabel("time_step")
         plt.ylabel(f"mean {feature}")
         if show:
+            plt.grid()
+            plt.legend()
             plt.show()
 
 
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 
-visualizator = Visualizator(root_path=root_path, run_id=1665492807)
-visualizator.plot("time_step", "n_cells", show=False)
+# visualizator = Visualizator(root_path=root_path, run_id=1666082312, color="green", label="high damage accumulation rate")
+# visualizator.plot("time_step", "n_cells", show=False)
 # visualizator.plot_mean_feature("cell_damage", show=False)
 # visualizator.plot_mean_feature("cell_age", show=False)
 
-visualizator = Visualizator(root_path=root_path, run_id=max(folders))
+visualizator = Visualizator(root_path=root_path, run_id=max(folders), label="low damage accumulation rate")
 # visualizator = Visualizator(root_path=root_path, run_id=1665232310)
 visualizator.plot("time_step", "n_cells", show=False)
 # visualizator.plot_mean_feature("cell_damage", show=False)
@@ -98,6 +104,7 @@ visualizator.plot("time_step", "n_cells", show=False)
 # visualizator.plot_mean_feature("cell_age", show=False)
 # visualizator.plot_mean_feature("cell_damage", visualizator.cell_table.has_divided == True, show=False)
 plt.grid()
+plt.legend()
 plt.show()
 
 # visualizator.plot_mean_feature("cell_age", show=True)
