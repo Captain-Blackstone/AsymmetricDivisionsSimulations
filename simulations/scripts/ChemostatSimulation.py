@@ -11,12 +11,12 @@ import json
 
 
 class Chemostat:
-    def __init__(self, volume_val: float, dilution_rate: float, n_cells=None):
+    def __init__(self, volume_val: float, dilution_rate: float, n_cells=None, asymmetry=0):
         self.V = volume_val
         self.D = dilution_rate
         self._cells = []
         if n_cells:
-            self.populate_with_cells(n_cells)
+            self.populate_with_cells(n_cells, asymmetry=asymmetry)
 
     @property
     def N(self) -> int:
@@ -26,8 +26,8 @@ class Chemostat:
     def cells(self) -> list:
         return self._cells
 
-    def populate_with_cells(self, n_cells: int) -> None:
-        self._cells += [Cell(chemostat=self, cell_id=i) for i in range(n_cells)]
+    def populate_with_cells(self, n_cells: int, asymmetry: float) -> None:
+        self._cells += [Cell(chemostat=self, cell_id=i, asymmetry=asymmetry) for i in range(n_cells)]
 
     def dilute(self) -> None:
         expected_n_cells_to_remove = self.D * self.N / self.V
@@ -166,7 +166,8 @@ class Cell:
 
 
 class Simulation:
-    def __init__(self, parameters: dict,
+    def __init__(self,
+                 parameters: dict,
                  n_starting_cells: int,
                  save_path: str,
                  n_threads=1, n_procs=1):
@@ -182,7 +183,8 @@ class Simulation:
                                          chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
-                                             n_cells=n_starting_cells),
+                                             n_cells=n_starting_cells,
+                                             asymmetry=parameters["asymmetry"]),
                                          save_path=save_path) for i in range(n_threads)]
         self.n_procs = n_procs
 
@@ -313,8 +315,9 @@ class History:
 
 
 if __name__ == "__main__":
-    damage_accumulation_mode, damage_accumulation_intercept, damage_accumulation_rate, lethal_damage_threshold, \
-        critical_nutrient_amount, nutrient_accumulation_rate, volume, dilution_rate = sys.argv[1:9]
+    asymmetry, damage_accumulation_mode, damage_accumulation_intercept, damage_accumulation_rate, \
+        lethal_damage_threshold, critical_nutrient_amount, nutrient_accumulation_rate, \
+        volume, dilution_rate = sys.argv[1:10]
     parameters = {
         "chemostat_parameters": {
             "volume": float(volume),
@@ -326,8 +329,9 @@ if __name__ == "__main__":
             "damage_accumulation_rate": float(damage_accumulation_rate),
             "lethal_damage_threshold": float(lethal_damage_threshold),
             "nutrient_accumulation_rate": float(nutrient_accumulation_rate),
-            "critical_nutrient_amount": float(critical_nutrient_amount)
-        }
+            "critical_nutrient_amount": float(critical_nutrient_amount),
+        },
+        "asymmetry": float(asymmetry)
     }
-    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path="../data/", n_threads=16, n_procs=8)
+    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path="../data/", n_threads=8, n_procs=8)
     simulation.run(10000)

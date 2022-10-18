@@ -86,12 +86,12 @@ class Visualizator:
 
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 
-# visualizator = Visualizator(root_path=root_path, run_id=1666082312, color="green", label="high damage accumulation rate")
-# visualizator.plot("time_step", "n_cells", show=False)
+visualizator = Visualizator(root_path=root_path, run_id=1666086338, label="asymmetry", color="blue")
+visualizator.plot("time_step", "n_cells", show=False)
 # visualizator.plot_mean_feature("cell_damage", show=False)
 # visualizator.plot_mean_feature("cell_age", show=False)
 
-visualizator = Visualizator(root_path=root_path, run_id=max(folders), label="low damage accumulation rate")
+visualizator = Visualizator(root_path=root_path, run_id=1666086102, label="symmetry", color="green")
 # visualizator = Visualizator(root_path=root_path, run_id=1665232310)
 visualizator.plot("time_step", "n_cells", show=False)
 # visualizator.plot_mean_feature("cell_damage", show=False)
