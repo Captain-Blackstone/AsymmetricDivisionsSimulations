@@ -1,13 +1,17 @@
+mode = "local"
+
 import pandas as pd
 import sys
 import datetime
 from pathlib import Path
 from scipy.stats import gamma
 import numpy as np
-from tqdm import tqdm
-import multiprocessing
 import os
 import json
+
+if mode == "local":
+    from tqdm import tqdm
+    import multiprocessing
 
 
 class Chemostat:
@@ -47,7 +51,6 @@ class Cell:
     nutrient_accumulation_rate = 1
 
     # Damage accumulation
-    damage_accumulation_mode = "linear"
     damage_accumulation_rate = 0.1
     damage_accumulation_intercept = None
     lethal_damage_threshold = 1000
@@ -81,17 +84,7 @@ class Cell:
 
     def live(self) -> None:
         self._age += 1
-        if Cell.damage_accumulation_mode == "linear":
-            self._damage += Cell.damage_accumulation_rate
-        elif Cell.damage_accumulation_mode == "nonlinear":
-            if Cell.damage_accumulation_intercept is not None:
-                self._damage += Cell.damage_accumulation_rate*self._damage + Cell.damage_accumulation_intercept
-            else:
-                raise ValueError(
-                    "Damage accumulation intercept cannot be None if damage accumulation mode is nonlinear"
-                )
-        else:
-            raise ValueError("Unknown damage accumulation mode")
+        self._damage += Cell.damage_accumulation_rate*self._damage + Cell.damage_accumulation_intercept
         if self.damage > Cell.lethal_damage_threshold:
             self.die(cause="damage")
 
@@ -175,10 +168,9 @@ class Simulation:
         Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
-        Cell.damage_accumulation_mode = parameters["cell_parameters"]["damage_accumulation_mode"]
         Cell.damage_accumulation_intercept = parameters["cell_parameters"]["damage_accumulation_intercept"]
 
-        run_id = round(datetime.datetime.now().timestamp())
+        run_id = round(datetime.datetime.now().timestamp()*1000000)
         self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
                                          chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
@@ -186,11 +178,11 @@ class Simulation:
                                              n_cells=n_starting_cells,
                                              asymmetry=parameters["asymmetry"]),
                                          save_path=save_path) for i in range(n_threads)]
-        self.n_procs = n_procs
+        self.n_procs = n_procs if mode == "local" else 1
 
         # Write parameters needed to identify simulation
-        with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
-            json.dump(parameters, fl)
+        # with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
+        #     json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int, n_steps: int) -> None:
         self.threads[thread_number].run(n_steps=n_steps)
@@ -214,10 +206,10 @@ class Simulation:
 class SimulationThread:
     def __init__(self, run_id: int, thread_id: int, chemostat_obj: Chemostat, save_path: str):
         self.chemostat = chemostat_obj
-        self.history = History(self,
-                               save_path=save_path,
-                               run_id=run_id,
-                               thread_id=thread_id)
+        # self.history = History(self,
+        #                        save_path=save_path,
+        #                        run_id=run_id,
+        #                        thread_id=thread_id)
 
     @property
     def current_max_id(self) -> int:
@@ -233,7 +225,7 @@ class SimulationThread:
             new_cells += cell.reproduce(self.current_max_id + 1)
 
         # History is recorded
-        self.history.record(step_number)
+        # self.history.record(step_number)
 
         # Move to the next time step
         self.chemostat.cells = new_cells
@@ -244,9 +236,15 @@ class SimulationThread:
 
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
-        for step_number in tqdm(range(n_steps)):
-            self._step(step_number)
-        self.history.save()
+        if mode == "local":
+            for step_number in tqdm(range(n_steps)):
+                self._step(step_number)
+                if self.chemostat.N:
+                    print(self.chemostat.N, np.array([cell.damage for cell in self.chemostat.cells]).mean())
+        elif mode == "cluster":
+            for step_number in range(n_steps):
+                self._step(step_number)
+        # self.history.save()
 
 
 class History:
@@ -315,16 +313,15 @@ class History:
 
 
 if __name__ == "__main__":
-    asymmetry, damage_accumulation_mode, damage_accumulation_intercept, damage_accumulation_rate, \
+    asymmetry, damage_accumulation_intercept, damage_accumulation_rate, \
         lethal_damage_threshold, critical_nutrient_amount, nutrient_accumulation_rate, \
-        volume, dilution_rate = sys.argv[1:10]
+        volume, dilution_rate = sys.argv[1:9]
     parameters = {
         "chemostat_parameters": {
             "volume": float(volume),
             "dilution_rate": float(dilution_rate)
         },
         "cell_parameters": {
-            "damage_accumulation_mode": damage_accumulation_mode,
             "damage_accumulation_intercept": float(damage_accumulation_intercept),
             "damage_accumulation_rate": float(damage_accumulation_rate),
             "lethal_damage_threshold": float(lethal_damage_threshold),
@@ -333,5 +330,10 @@ if __name__ == "__main__":
         },
         "asymmetry": float(asymmetry)
     }
-    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path="../data/", n_threads=8, n_procs=8)
-    simulation.run(10000)
+    if mode == "local":
+        save_path = "../data/"
+    else:
+        Path("data/").mkdir(exist_ok=True)
+        save_path = "./data/"
+    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path=save_path, n_threads=1, n_procs=1)
+    simulation.run(50000)
