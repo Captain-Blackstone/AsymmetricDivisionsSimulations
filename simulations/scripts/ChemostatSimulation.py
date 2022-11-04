@@ -1,17 +1,11 @@
-mode = "local"
-
 import pandas as pd
-import sys
 import datetime
 from pathlib import Path
 from scipy.stats import gamma
 import numpy as np
 import os
 import json
-
-if mode == "local":
-    from tqdm import tqdm
-    import multiprocessing
+import argparse
 
 
 class Chemostat:
@@ -51,9 +45,13 @@ class Cell:
     nutrient_accumulation_rate = 1
 
     # Damage accumulation
-    damage_accumulation_rate = 0.1
-    damage_accumulation_intercept = None
+    damage_accumulation_rate = 0
+    damage_accumulation_intercept = 0.1
     lethal_damage_threshold = 1000
+
+    # mutation rate
+    mutation_rate = 0
+    mutation_step = 0.01
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -91,15 +89,18 @@ class Cell:
     def reproduce(self, offspring_id: int) -> list:
         self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division
         if self.has_reproduced:
+            offspring_asymmetry = self.asymmetry
+            if np.random.uniform() < self.mutation_rate:
+                offspring_asymmetry += np.random.choice([self.mutation_step, -self.mutation_step])
             return [Cell(chemostat=self.chemostat,
                          cell_id=offspring_id,
                          parent_id=self.id,
-                         asymmetry=self.asymmetry,
+                         asymmetry=offspring_asymmetry,
                          damage=self.damage * (1 + self.asymmetry) / 2),
                     Cell(chemostat=self.chemostat,
                          cell_id=offspring_id + 1,
                          parent_id=self.id,
-                         asymmetry=self.asymmetry,
+                         asymmetry=offspring_asymmetry,
                          damage=self.damage * (1 - self.asymmetry) / 2)]
         else:
             return [self]
@@ -163,12 +164,15 @@ class Simulation:
                  parameters: dict,
                  n_starting_cells: int,
                  save_path: str,
+                 mode: str,
                  n_threads=1, n_procs=1):
         Cell.damage_accumulation_rate = parameters["cell_parameters"]["damage_accumulation_rate"]
         Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
         Cell.damage_accumulation_intercept = parameters["cell_parameters"]["damage_accumulation_intercept"]
+        Cell.mutation_step = parameters["cell_parameters"]["mutation_step"]
+        Cell.mutation_rate = parameters["cell_parameters"]["mutation_rate"]
 
         run_id = round(datetime.datetime.now().timestamp()*1000000)
         self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
@@ -177,12 +181,13 @@ class Simulation:
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
                                              n_cells=n_starting_cells,
                                              asymmetry=parameters["asymmetry"]),
-                                         save_path=save_path) for i in range(n_threads)]
+                                         save_path=save_path,
+                                         mode=mode) for i in range(n_threads)]
         self.n_procs = n_procs if mode == "local" else 1
 
         # Write parameters needed to identify simulation
-        # with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
-        #     json.dump(parameters, fl)
+        with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
+            json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int, n_steps: int) -> None:
         self.threads[thread_number].run(n_steps=n_steps)
@@ -204,12 +209,13 @@ class Simulation:
 
 
 class SimulationThread:
-    def __init__(self, run_id: int, thread_id: int, chemostat_obj: Chemostat, save_path: str):
+    def __init__(self, run_id: int, thread_id: int, chemostat_obj: Chemostat, save_path: str, mode: str):
+        self.mode = mode
         self.chemostat = chemostat_obj
-        # self.history = History(self,
-        #                        save_path=save_path,
-        #                        run_id=run_id,
-        #                        thread_id=thread_id)
+        self.history = History(self,
+                               save_path=save_path,
+                               run_id=run_id,
+                               thread_id=thread_id)
 
     @property
     def current_max_id(self) -> int:
@@ -225,7 +231,7 @@ class SimulationThread:
             new_cells += cell.reproduce(self.current_max_id + 1)
 
         # History is recorded
-        # self.history.record(step_number)
+        self.history.record(step_number)
 
         # Move to the next time step
         self.chemostat.cells = new_cells
@@ -236,15 +242,15 @@ class SimulationThread:
 
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
-        if mode == "local":
+        if self.mode == "local":
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
                 if self.chemostat.N:
                     print(self.chemostat.N, np.array([cell.damage for cell in self.chemostat.cells]).mean())
-        elif mode == "cluster":
+        elif self.mode == "cluster":
             for step_number in range(n_steps):
                 self._step(step_number)
-        # self.history.save()
+        self.history.save()
 
 
 class History:
@@ -313,27 +319,50 @@ class History:
 
 
 if __name__ == "__main__":
-    asymmetry, damage_accumulation_intercept, damage_accumulation_rate, \
-        lethal_damage_threshold, critical_nutrient_amount, nutrient_accumulation_rate, \
-        volume, dilution_rate = sys.argv[1:9]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--asymmetry", default=0, type=float)
+    parser.add_argument("-dai", "--damage_accumulation_intercept", default=0.1, type=float,
+                        help="Next_step_damage = current_step_damage * dar + dai")
+    parser.add_argument("-dar", "--damage_accumulation_rate", default=0, type=float,
+                        help="Next_step_damage = current_step_damage * dar + dai")
+    parser.add_argument("-dlr", "--damage_lethal_threshold", default=1000, type=float)
+    parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
+    parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
+    parser.add_argument("-v", "--volume", default=1000, type=float)
+    parser.add_argument("-d", "--dilution_rate", default=1, type=float)
+    parser.add_argument("-mr", "--mutation_rate", default=0, type=float)
+    parser.add_argument("-ms", "--mutation_step", default=0, type=float)
+    parser.add_argument("-m", "--mode", default="cluster", type=str)
+    args = parser.parse_args()
     parameters = {
         "chemostat_parameters": {
-            "volume": float(volume),
-            "dilution_rate": float(dilution_rate)
+            "volume": args.volume,
+            "dilution_rate": args.dilution_rate
         },
         "cell_parameters": {
-            "damage_accumulation_intercept": float(damage_accumulation_intercept),
-            "damage_accumulation_rate": float(damage_accumulation_rate),
-            "lethal_damage_threshold": float(lethal_damage_threshold),
-            "nutrient_accumulation_rate": float(nutrient_accumulation_rate),
-            "critical_nutrient_amount": float(critical_nutrient_amount),
+            "damage_accumulation_intercept": args.damage_accumulation_intercept,
+            "damage_accumulation_rate": args.damage_accumulation_rate,
+            "lethal_damage_threshold": args.damage_lethal_threshold,
+            "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
+            "critical_nutrient_amount": args.critical_nutrient_amount,
+            "mutation_rate": args.mutation_rate,
+            "mutation_step": args.mutation_step,
         },
-        "asymmetry": float(asymmetry)
+        "asymmetry": args.asymmetry
     }
-    if mode == "local":
+    if args.mode == "local":
+        from tqdm import tqdm
+        import multiprocessing
+
         save_path = "../data/"
     else:
         Path("data/").mkdir(exist_ok=True)
         save_path = "./data/"
-    simulation = Simulation(parameters=parameters, n_starting_cells=1, save_path=save_path, n_threads=1, n_procs=1)
+
+    simulation = Simulation(parameters=parameters,
+                            n_starting_cells=1,
+                            save_path=save_path,
+                            n_threads=1,
+                            n_procs=1,
+                            mode=args.mode)
     simulation.run(50000)
