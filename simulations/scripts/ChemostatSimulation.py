@@ -7,6 +7,7 @@ import os
 import json
 import argparse
 import sqlite3
+import atexit
 
 
 class Chemostat:
@@ -249,6 +250,7 @@ class SimulationThread:
             for step_number in range(n_steps):
                 self._step(step_number)
         self.history.save()
+        self.history.SQLdb.close()
 
 
 class History:
@@ -301,11 +303,14 @@ class History:
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{thread_id}.sqlite")
+        # If the program exist with error, the conenction will still be closed
+        atexit.register(self.SQLdb.close)
         self.create_tables()
         self.reset()
+        # This is needed not to record the same cell twice in the genealogy table
         self.max_cell_in_genealogy = -1
 
-    def create_tables(self):
+    def create_tables(self) -> None:
         for table in self.tables:
             columns = [" ".join([key, val]) for key, val in self.tables[table]["columns"].items()]
             content = ', '.join(columns)
@@ -315,7 +320,7 @@ class History:
             self.SQLdb.execute(query)
         self.SQLdb.commit()
 
-    def reset(self):
+    def reset(self) -> None:
         self.history_table = pd.DataFrame(columns=["time_step", "n_cells"])
         self.cells_table = pd.DataFrame(columns=["time_step", "cell_id", "cell_age",
                                                  "cell_damage", "has_divided", "has_died"])
