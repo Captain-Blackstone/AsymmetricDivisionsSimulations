@@ -6,6 +6,7 @@ import numpy as np
 import os
 import json
 import argparse
+import sqlite3
 
 
 class Chemostat:
@@ -217,10 +218,6 @@ class SimulationThread:
                                run_id=run_id,
                                thread_id=thread_id)
 
-    @property
-    def current_max_id(self) -> int:
-        return max([cell.id for cell in self.chemostat.cells])
-
     def _step(self, step_number: int) -> None:
         # Cells are diluted
         self.chemostat.dilute()
@@ -228,7 +225,8 @@ class SimulationThread:
         # Alive cells reproduce
         new_cells = []
         for cell in filter(lambda cell_obj: not cell_obj.has_died, self.chemostat.cells):
-            new_cells += cell.reproduce(self.current_max_id + 1)
+            offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
+            new_cells += cell.reproduce(offspring_id)
 
         # History is recorded
         self.history.record(step_number)
@@ -245,8 +243,8 @@ class SimulationThread:
         if self.mode == "local":
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
-                if self.chemostat.N:
-                    print(self.chemostat.N, np.array([cell.damage for cell in self.chemostat.cells]).mean())
+                # if self.chemostat.N:
+                #     print(self.chemostat.N, np.array([cell.damage for cell in self.chemostat.cells]).mean())
         elif self.mode == "cluster":
             for step_number in range(n_steps):
                 self._step(step_number)
@@ -254,6 +252,43 @@ class SimulationThread:
 
 
 class History:
+    tables = {
+        "history":
+            {
+                "columns":
+                    {
+                        "time_step": "INTEGER",
+                        "n_cells": "INTEGER"
+                    },
+                "additional": ["PRIMARY KEY(time_step)"]
+            },
+        "cells":
+            {
+                "columns":
+                    {
+                        "record_id": "INTEGER primary key autoincrement",
+                        "time_step": "INTEGER",
+                        "cell_id": "INTEGER",
+                        "cell_age": "INTEGER",
+                        "cell_damage": "REAL",
+                        "has_divided": "BOOLEAN",
+                        "has_died": "BOOLEAN"
+                    },
+                "additional": ["FOREIGN KEY(time_step) REFERENCES history (time_step)"]
+            },
+        "genealogy":
+            {
+                "columns":
+                    {
+                        "cell_id": "INTEGER",
+                        "parent_id": "INTEGER"
+                    },
+                "additional": ["PRIMARY KEY(cell_id)",
+                               "FOREIGN KEY(cell_id) REFERENCES cells (cell_id)",
+                               "FOREIGN KEY(parent_id) REFERENCES cells (cell_id)"]
+            }
+    }
+
     def __init__(self,
                  simulation_obj: SimulationThread,
                  save_path: str,
@@ -265,7 +300,20 @@ class History:
         self.save_path = f"{save_path}/{self.run_id}"
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
+        self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{thread_id}.sqlite")
+        self.create_tables()
         self.reset()
+        self.max_cell_in_genealogy = -1
+
+    def create_tables(self):
+        for table in self.tables:
+            columns = [" ".join([key, val]) for key, val in self.tables[table]["columns"].items()]
+            content = ', '.join(columns)
+            for element in self.tables[table]["additional"]:
+                content += ", " + element
+            query = f"CREATE TABLE {table} ({content});"
+            self.SQLdb.execute(query)
+        self.SQLdb.commit()
 
     def reset(self):
         self.history_table = pd.DataFrame(columns=["time_step", "n_cells"])
@@ -293,25 +341,29 @@ class History:
         self.cells_table = pd.concat([self.cells_table, df_to_add], ignore_index=True)
 
         # Make a record in genealogy_table
-        cells = list(filter(lambda el: el.id not in self.genealogy_table.cell_id,
+        cells = list(filter(lambda el: el.id > self.max_cell_in_genealogy,
                             self.simulation_thread.chemostat.cells))
-        df_to_add = pd.DataFrame.from_dict(
-            {"cell_id": [cell.id for cell in cells],
-             "parent_id": [cell.parent_id for cell in cells],
-             })
-        self.genealogy_table = pd.concat([self.genealogy_table, df_to_add], ignore_index=True)
-
+        if cells:
+            df_to_add = pd.DataFrame.from_dict(
+                {"cell_id": [cell.id for cell in cells],
+                 "parent_id": [cell.parent_id for cell in cells],
+                 })
+            self.genealogy_table = pd.concat([self.genealogy_table, df_to_add], ignore_index=True)
+            self.max_cell_in_genealogy = max(df_to_add.cell_id)
         if len(self.cells_table) > 5000:
             self.save()
 
     def save(self) -> None:
         for table, stem in zip([self.history_table, self.cells_table, self.genealogy_table],
                                ["history", "cells", "genealogy"]):
-            path = Path(f"{self.save_path}/{stem}_{self.run_id}_{self.thread_id}.tsv")
-            if path.exists():
-                table.to_csv(path, mode="a", sep="\t", index=False, header=False)
-            else:
-                table.to_csv(path, sep="\t", index=False)
+
+            table.to_sql(stem, self.SQLdb, if_exists='append', index=False)
+            # path = Path(f"{self.save_path}/{stem}_{self.run_id}_{self.thread_id}.tsv")
+            # if path.exists():
+            #     table.to_csv(path, mode="a", sep="\t", index=False, header=False)
+            # else:
+            #     table.to_csv(path, sep="\t", index=False)
+        self.SQLdb.commit()
         self.reset()
 
     def __str__(self):
@@ -344,7 +396,7 @@ if __name__ == "__main__":
             "damage_accumulation_rate": args.damage_accumulation_rate,
             "lethal_damage_threshold": args.damage_lethal_threshold,
             "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
-            "critical_nutrient_amount": args.critical_nutrient_amount,
+            "critical_nutrient_amount": args.nutrient_critical_amount,
             "mutation_rate": args.mutation_rate,
             "mutation_step": args.mutation_step,
         },
@@ -354,7 +406,7 @@ if __name__ == "__main__":
         from tqdm import tqdm
         import multiprocessing
 
-        save_path = "../data/"
+        save_path = "../data/local_experiments/"
     else:
         Path("data/").mkdir(exist_ok=True)
         save_path = "./data/"
