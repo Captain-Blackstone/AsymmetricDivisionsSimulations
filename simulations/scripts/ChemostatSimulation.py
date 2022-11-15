@@ -187,7 +187,7 @@ class Simulation:
                                              asymmetry=parameters["asymmetry"]),
                                          save_path=save_path,
                                          mode=mode) for i in range(n_threads)]
-        self.n_procs = n_procs if mode == "local" else 1
+        self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
         # Write parameters needed to identify simulation
         with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
@@ -213,13 +213,20 @@ class Simulation:
 
 
 class SimulationThread:
-    def __init__(self, run_id: int, thread_id: int, chemostat_obj: Chemostat, save_path: str, mode: str):
+    def __init__(self,
+                 run_id: int,
+                 thread_id: int,
+                 chemostat_obj: Chemostat,
+                 save_path: str,
+                 mode: str):
         self.mode = mode
         self.chemostat = chemostat_obj
         self.history = History(self,
                                save_path=save_path,
                                run_id=run_id,
                                thread_id=thread_id)
+        if self.mode == "interactive":
+            self.drawer = Drawer(self)
 
     def _step(self, step_number: int) -> None:
         # Cells are diluted
@@ -241,84 +248,15 @@ class SimulationThread:
         for cell in self.chemostat.cells:
             cell.live()
 
-
-    def _start_drawing(self):
-        fig, ax = plt.subplots(3, 1)
-        ax[0].set_title("Population size", fontsize=10)
-        ax[1].set_title("Mean damage", fontsize=10)
-        ax[2].set_title("Asymmetry", fontsize=10)
-
-        nn = []
-        tt = []
-        dd_mean = []
-        dd_max = []
-        dd_min = []
-        aa = []
-        l1, = ax[0].plot(tt, nn, color="blue")
-        l2, = ax[1].plot(tt, dd_mean, color="green")
-        l3, = ax[1].plot(tt, dd_max, color="green", alpha=0.5)
-        l4, = ax[1].plot(tt, dd_min, color="green", alpha=0.5)
-        l5, = ax[2].plot(tt, aa, color="red", alpha=0.5)
-
-        plt.get_current_fig_manager().full_screen_toggle()
-        return fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt
-
-    def _draw_step(self, fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt, step_number):
-        if step_number % 10 == 0:
-            nn.append(self.chemostat.N)
-            tt.append(step_number)
-            damages = np.array([cell.damage for cell in self.chemostat.cells])
-            if len(damages):
-                dd_mean.append(damages.mean())
-                dd_max.append(damages.max())
-                dd_min.append(damages.min())
-                aa.append(np.array([cell.asymmetry for cell in self.chemostat.cells]).mean())
-            else:
-                dd_mean.append(0)
-                dd_max.append(0)
-                dd_min.append(0)
-                aa.append(0)
-            nn = nn[-1000:]
-            dd_mean = dd_mean[-1000:]
-            dd_max = dd_max[-1000:]
-            dd_min = dd_min[-1000:]
-            aa = aa[-1000:]
-
-            tt = tt[-1000:]
-
-        if step_number % 100 == 0:
-            l1.set_ydata(nn)
-            l2.set_ydata(dd_mean)
-            l3.set_ydata(dd_max)
-            l4.set_ydata(dd_min)
-            l5.set_ydata(aa)
-            l1.set_xdata(tt)
-            l2.set_xdata(tt)
-            l3.set_xdata(tt)
-            l4.set_xdata(tt)
-            l5.set_xdata(tt)
-
-            # hst = np.histogram([cell.age for cell in self.chemostat.cells], 30)
-            # l5.set_ydata(hst[0])
-            # l5.set_xdata(hst[1][1:])
-            ax[0].relim()
-            ax[0].autoscale_view(True, True, True)
-            ax[1].relim()
-            ax[1].autoscale_view(True, True, True)
-            ax[2].relim()
-            ax[2].autoscale_view(True, True, True)
-
-            fig.canvas.draw()
-            plt.pause(0.01)
-        return nn, dd_mean, dd_max, dd_min, aa, tt
-
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
         if self.mode == "local":
-            # fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt = self._start_drawing()
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
-                # nn, dd_mean, dd_max, dd_min, aa, tt = self._draw_step(fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt, step_number)
+        elif self.mode == "interactive":
+            for step_number in tqdm(range(n_steps)):
+                self._step(step_number)
+                self.drawer.draw_step(step_number)
         elif self.mode == "cluster":
             for step_number in range(n_steps):
                 self._step(step_number)
@@ -450,6 +388,93 @@ class History:
         return str(self.history_table)
 
 
+class Drawer:
+    def __init__(self, simulation_thread: SimulationThread):
+        self.simulation_thread = simulation_thread
+        self.update_time = 100  # number of steps between figure updates
+        self.resolution = 10  # number of steps between data collection events
+        self.plot_how_many = 1000  # number of points present on the plot at each time point
+
+        self.fig, self.ax = plt.subplots(3, 1)
+        for i, title in enumerate(["Population size", "Mean damage", "Asymmetry"]):
+            self.ax[i].set_title(title, fontsize=10)
+
+        data_dicts = [
+            {"ax_num": 0, "color": "blue", "alpha": 1,
+             "update_function": lambda: self.simulation_thread.chemostat.N},
+            {"ax_num": 1, "color": "green", "alpha": 1,
+             "update_function":
+                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 1, "color": "green", "alpha": 0.5,
+             "update_function":
+                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 1, "color": "green", "alpha": 0.5,
+             "update_function":
+                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 2,  "color": "red", "alpha": 1,
+             "update_function":
+                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()
+                 if self.simulation_thread.chemostat.N else 0},
+        ]
+
+        self.plots = []
+        for data_dict in data_dicts:
+            self.plots.append(Plot(self,
+                                   self.plot_how_many,
+                                   self.ax[data_dict["ax_num"]],
+                                   data_dict["color"],
+                                   data_dict["alpha"],
+                                   data_dict["update_function"]))
+
+        plt.get_current_fig_manager().full_screen_toggle()
+
+    def draw_step(self, step_number):
+        # Collect data each self.resolution steps
+        if step_number % self.resolution == 0:
+            for plot in self.plots:
+                plot.collect_data(step_number)
+        # Update figure each self.update_time steps
+        if step_number % self.update_time == 0:
+            for plot in self.plots:
+                plot.update_data()
+            for plot in self.plots:
+                plot.update_plot()
+            self.fig.canvas.draw()
+            plt.pause(0.01)
+
+
+class Plot:
+    def __init__(self,
+                 drawer: Drawer,
+                 plot_how_many: int,
+                 ax: plt.Axes,
+                 color: str,
+                 alpha: str,
+                 update_function):
+        self.drawer, self.plot_how_many = drawer, plot_how_many
+        self.ax, self.color, self.alpha = ax, color, alpha
+        self.update_function = update_function
+        self.xdata, self.ydata = [], []
+        self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
+
+    def collect_data(self, step_num: int):
+        self.xdata.append(step_num)
+        self.ydata.append(self.update_function())
+        self.xdata = self.xdata[-self.plot_how_many:]
+        self.ydata = self.ydata[-self.plot_how_many:]
+
+    def update_data(self):
+        self.layer.set_ydata(self.ydata)
+        self.layer.set_xdata(self.xdata)
+
+    def update_plot(self):
+        self.ax.relim()
+        self.ax.autoscale_view(True, True, True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
@@ -486,7 +511,7 @@ if __name__ == "__main__":
         },
         "asymmetry": args.asymmetry
     }
-    if args.mode == "local":
+    if args.mode in ["local", "interactive"]:
         from tqdm import tqdm
         import multiprocessing
 

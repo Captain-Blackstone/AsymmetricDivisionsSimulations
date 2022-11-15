@@ -1,0 +1,281 @@
+#LyX 2.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 544
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_minted 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Parameters:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $thresh$
+\end_inset
+
+ - damage threshod.
+ If cell damage excceds this value, the cell dies.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $linear,quadratic$
+\end_inset
+
+ - terms in damage accumulation equation.
+ damage(t+1) = damage(t) + linear + damage(t)*quadratic
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $critical,rate$
+\end_inset
+
+ - terms in nutrient accumulation equation.
+ nutrient(t) = nutrient(t-1) + rate.
+ If nutrient(t) > critical, cell divides.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $lifespan$
+\end_inset
+
+ - expected number of time step for cell to live untill it divides.
+\end_layout
+
+\begin_layout Standard
+Goal: find the parameters, such that (1) symmetric population dies of damage,
+ (2) asymmetric population lives at population size 1000.
+\end_layout
+
+\begin_layout Standard
+1) Symmetric population dies of damage = a single symmetrically dividing
+ cell should not survive until reproduction.
+ Equilibrium amount of damage is slightly less than 
+\begin_inset Formula $\frac{thresh}{2}$
+\end_inset
+
+ (i.e.
+ its mother almost accumulated 
+\begin_inset Formula $thresh$
+\end_inset
+
+ amount of damage, but divided before it happened).
+ Therefore, this condition can be reformulated as:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\frac{thresh}{2}*(1+quadratic)^{lifespan}>thresh$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $(1+quadratic)^{lifespan}>2$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The linear term of damage accumulation contributes negligibly.
+\end_layout
+
+\begin_layout Standard
+Expected lifespan of a single cell is determined by nutrient accumulation
+ rate and critical amount of nutrient needed for division as 
+\begin_inset Formula $critical/rate$
+\end_inset
+
+.
+ Setting rate to 1, we can substitute 
+\begin_inset Formula $lifespan$
+\end_inset
+
+ for 
+\begin_inset Formula $critical$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $(1+quadratic)^{cricical}>2$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+2) Asymmetric population lives at population size 1000.
+\end_layout
+
+\begin_layout Standard
+This condition means that the cell with no damage accumulated (a daughter
+ cell produced by an asymmetric division) will not die because of damage,
+ but will be very close (since we want its damaged daughter to die).
+ That is:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $linear*(1+quadratic)^{lifespan}\sim thresh$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Expected lifespan of a cell in a population of N cells is given by 
+\begin_inset Formula $N*critical/rate$
+\end_inset
+
+, so in our case it will be equal to 
+\begin_inset Formula $1000*critical$
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $linear*((1+quadratic)^{cricical})^{1000}\sim thresh$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+To meet the first condition 
+\begin_inset Formula $(1+quadratic)^{cricical}$
+\end_inset
+
+should be greater than 2.
+ With 
+\begin_inset Formula $quadratic=0.0006934$
+\end_inset
+
+ and 
+\begin_inset Formula $critical=1000$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $(1+quadratic)^{cricical}=2.0012$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+and 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $2.0012^{1000}=1.97e+301$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+which means, that 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\frac{thresh}{linear}=1.97e+301$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+And this is a threshold that is close to minimum for our conditions to meet.
+ Which is one hell of a threshold.
+ Is there anything wrong?
+\end_layout
+
+\end_body
+\end_document

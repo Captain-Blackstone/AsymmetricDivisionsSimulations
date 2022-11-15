@@ -1,0 +1,884 @@
+#LyX 2.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 544
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_minted 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+Simulation Specification
+\end_layout
+
+\begin_layout Standard
+CONFIG
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\alpha$
+\end_inset
+
+ - critical amount of nutrient required for a cell division (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $k$
+\end_inset
+
+ - rate of accumulation of the nutrient by a single cell in the absence
+ of any other cells in the environment (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $V$
+\end_inset
+
+ - volume of chemostat (float)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $D$
+\end_inset
+
+ - dilution rate (float)
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Simulation Overview
+\end_layout
+
+\begin_layout Standard
+You are in charge of a chemostat with bacterial cells living in it.
+ Chemostat experiences constant dilutions, removing some of the cells.
+ The constant concentration of culture medium is maintained in the chemostat.
+ The rate of bacterial division is dependent on the uptake of the nutrients
+ from the medium.
+ Thus, the more bacteria live in the chemostat, the less is the nutrient
+ uptake and consecuently the division rate.
+\end_layout
+
+\begin_layout Standard
+You can choose the volume of the chemostat (
+\begin_inset Formula $V$
+\end_inset
+
+), the rate its of dilution (
+\begin_inset Formula $D$
+\end_inset
+
+).
+ You can also choose the parameters of individual cells that affect their
+ growth rates - the rate of the nutrients uptake (
+\begin_inset Formula $k$
+\end_inset
+
+) and the amount of nutrient in a cell sufficient for division (
+\begin_inset Formula $\alpha)$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Cells
+\end_layout
+
+\begin_layout Standard
+All cells have the 3 common attributes:
+\end_layout
+
+\begin_layout Standard
+- critical amount (float) - critical amount of nutrient required for a cell
+ division.
+ Is set to 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ at the start of a simulation;
+\end_layout
+
+\begin_layout Standard
+- nutrient_accumulation_rate (float) - rate of accumulation of the nutrient
+ by a single cell in the absence of any other cells in the environment.
+ Is set to 
+\begin_inset Formula $k$
+\end_inset
+
+ at the start of a simulation.
+\end_layout
+
+\begin_layout Standard
+- damage_accumulation_rate (float) - rate of damage accumulation during
+ one time step.
+ 
+\end_layout
+
+\begin_layout Standard
+Each cell has 9 individual attributes:
+\end_layout
+
+\begin_layout Standard
+1.
+ chemostat (Chemostat) - the chemostat where the cell is located;
+\end_layout
+
+\begin_layout Standard
+2.
+ cell id (integer) - unique identifier of a cell; it is given to a cell
+ when it is born;
+\end_layout
+
+\begin_layout Standard
+3.
+ parent id (integer) - cell id of a mother cell.
+ If there was no mother cell, the attribute is set to None;
+\end_layout
+
+\begin_layout Standard
+4.
+ age (integer) - number of generations passed since this cell was born (=
+ its mother cell divided); when the cell is born it is equal to 0;
+\end_layout
+
+\begin_layout Standard
+5.
+ probability of division (float) - the probability for a cell to divide
+ in the current generation.
+ This property is calculated from the cell age with the following formula:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $P=\frac{gamma(age,\alpha+1,k/N)}{1-\int_{0}^{age}gamma(x,\alpha+1,k/N)dx}$
+\end_inset
+
+, where 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ and 
+\begin_inset Formula $k$
+\end_inset
+
+ are taken from CONFIG and 
+\begin_inset Formula $N$
+\end_inset
+
+ is the population size; 
+\end_layout
+
+\begin_layout Standard
+6.
+ damage (float) - amount of damage accumulated by the cell;
+\end_layout
+
+\begin_layout Standard
+7.
+ asymmetry (float) - the asymmetry of damage inheritence by the daugther
+ cells;
+\begin_inset Formula $0\leq asymmetry\leq1$
+\end_inset
+
+, 
+\begin_inset Formula $asymmetry=0$
+\end_inset
+
+ is total symmetry, 
+\begin_inset Formula $asymmetry=1$
+\end_inset
+
+ is full asymmetry; 
+\end_layout
+
+\begin_layout Standard
+8.
+ has reproduced (boolean) - whether the cell reproduced in the current generatio
+n or not; when the cell is born it is set to False;
+\end_layout
+
+\begin_layout Standard
+9.
+ has died (boolean) - whether cell has died in the current generation or
+ not; when the cell is born it is set to False.
+\end_layout
+
+\begin_layout Standard
+Cells can do the following actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Reproduce.
+ Takes a parameter 
+\begin_inset Quotes eld
+\end_inset
+
+offspring id
+\begin_inset Quotes erd
+\end_inset
+
+ as an input.
+ 
+\end_layout
+
+\begin_layout Standard
+- A random number is generated.
+ If this number is less than probability of division of this cell, the reproduct
+ion happens: the cell produces two daughter cells and its 
+\begin_inset Quotes eld
+\end_inset
+
+has reproduced
+\begin_inset Quotes erd
+\end_inset
+
+ attribute is set to True.
+ The daughter cells have cell id of offspring id and offspring id + 1 as
+ their cell ids; asymmetry attribute values of the daughter cells are equal
+ to the mother's asymmetry value; the inherited damage is is calculated
+ as 
+\begin_inset Formula $\frac{(1+a)}{2}*d$
+\end_inset
+
+ for the first offspring and 
+\begin_inset Formula $\frac{(1-a)}{2}*d$
+\end_inset
+
+ for the second one, where 
+\begin_inset Formula $a$
+\end_inset
+
+ and 
+\begin_inset Formula $d$
+\end_inset
+
+ are asymmetry and damage values for the mohter cell respecitvely.
+ If the reproduction does not happend, 
+\begin_inset Quotes eld
+\end_inset
+
+has reproduced
+\begin_inset Quotes erd
+\end_inset
+
+ attribute is set to False.
+\end_layout
+
+\begin_layout Standard
+2.
+ Live
+\end_layout
+
+\begin_layout Standard
+- Increment 
+\begin_inset Quotes eld
+\end_inset
+
+age
+\begin_inset Quotes erd
+\end_inset
+
+ attribute by 1;
+\end_layout
+
+\begin_layout Standard
+- Increment 
+\begin_inset Quotes eld
+\end_inset
+
+damage
+\begin_inset Quotes erd
+\end_inset
+
+ attribute by 
+\begin_inset Quotes eld
+\end_inset
+
+damage accumulation rate
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+3.
+ Die
+\end_layout
+
+\begin_layout Standard
+- The attribute 
+\begin_inset Quotes eld
+\end_inset
+
+has died
+\begin_inset Quotes erd
+\end_inset
+
+ of the cell is set to True.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Chemostat
+\end_layout
+
+\begin_layout Standard
+Chemostat has 4 attributes:
+\end_layout
+
+\begin_layout Standard
+- V (float) - volume of chemostat; provided when chemostat is created; taken
+ from CONFIG;
+\end_layout
+
+\begin_layout Standard
+- D (float) - dilution rate; provided when chemostat is created; taken from
+ CONFIG;
+\end_layout
+
+\begin_layout Standard
+- cells (list) - list of cells that this chemostat contains; when chemostat
+ is created is empty; if initial number of cells is provied this list is
+ filled with this number of cells;
+\end_layout
+
+\begin_layout Standard
+- N (integer) - length of 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ list of chemostat; calculated from the 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ parameter.
+\end_layout
+
+\begin_layout Standard
+Chemostat can do the following actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Populate with cells.
+ Takes a parameter 
+\begin_inset Quotes eld
+\end_inset
+
+number of cells
+\begin_inset Quotes erd
+\end_inset
+
+ as input.
+\end_layout
+
+\begin_layout Standard
+- The 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ list is filled with cells.
+ The generated cells have ids from 0 to (
+\begin_inset Quotes eld
+\end_inset
+
+number of cells
+\begin_inset Quotes erd
+\end_inset
+
+ - 1) and the chemostat attribute set to the current chemostat object.
+\end_layout
+
+\begin_layout Standard
+2.
+ Dilute.
+\end_layout
+
+\begin_layout Standard
+- The number of cells to be removed from the chemostat is drawn from the
+ poisson distribution with parameter 
+\begin_inset Formula $\lambda=D*\frac{N^{2}}{V}$
+\end_inset
+
+.
+ If this number is greater then the number of cells, all cells are removed
+ from the chemostat.
+ This number of cells, randomly chosen, perform 
+\begin_inset Quotes eld
+\end_inset
+
+Die
+\begin_inset Quotes erd
+\end_inset
+
+ action.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+Simulation
+\end_layout
+
+\begin_layout Standard
+Simulation has 2 attributes:
+\end_layout
+
+\begin_layout Standard
+- chemostat (Chemostat); when simulation is created it is supplied with
+ one;
+\end_layout
+
+\begin_layout Standard
+- history (History); the object that contains all the history of the simulation.
+ Blank at the start, attribute 
+\begin_inset Quotes eld
+\end_inset
+
+save_path
+\begin_inset Quotes erd
+\end_inset
+
+ is set to the value supplied to the simulation when it is created.
+\end_layout
+
+\begin_layout Standard
+- current maximum id (integer) - the maxium id of the cells of the simulation's
+ chemostat.
+ Calculated based on the chemostat object.
+\end_layout
+
+\begin_layout Standard
+Simulation can do two actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Run.
+ Takes number of steps as input.
+\end_layout
+
+\begin_layout Standard
+- Performs 
+\begin_inset Quotes eld
+\end_inset
+
+number of steps
+\begin_inset Quotes erd
+\end_inset
+
+ steps of a simulation (each step receives 
+\begin_inset Quotes eld
+\end_inset
+
+step_number
+\begin_inset Quotes erd
+\end_inset
+
+ from 0 to number of steps as input).
+ After that history object performs the action 
+\begin_inset Quotes eld
+\end_inset
+
+save
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+2.
+ Step.
+ Takes step_number as input.
+\end_layout
+
+\begin_layout Standard
+This action consists of the following stages:
+\end_layout
+
+\begin_layout Standard
+1) Chemostat performs 
+\begin_inset Quotes eld
+\end_inset
+
+dilute
+\begin_inset Quotes erd
+\end_inset
+
+ action;
+\end_layout
+
+\begin_layout Standard
+2) A list of next generation cells is created; all cells of the chemostat
+ that have their attribute 
+\begin_inset Quotes eld
+\end_inset
+
+has died
+\begin_inset Quotes erd
+\end_inset
+
+ set to False perform 
+\begin_inset Quotes eld
+\end_inset
+
+reproduce
+\begin_inset Quotes erd
+\end_inset
+
+ action with 
+\begin_inset Quotes eld
+\end_inset
+
+current maximum id
+\begin_inset Quotes erd
+\end_inset
+
+ + 1 supplied as offspring id.
+ Either offspring of the division or the mother cell is added to the next
+ generation cells list.
+\end_layout
+
+\begin_layout Standard
+3) History object of the simulation performs 
+\begin_inset Quotes eld
+\end_inset
+
+record
+\begin_inset Quotes erd
+\end_inset
+
+ action with step_number as input;
+\end_layout
+
+\begin_layout Standard
+4) The 
+\begin_inset Quotes eld
+\end_inset
+
+cells
+\begin_inset Quotes erd
+\end_inset
+
+ attribute of simulation's chemostat is set to the list of next generation
+ cells;
+\end_layout
+
+\begin_layout Standard
+5) All the cells in chemostate increase their age value by 1.
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+History
+\end_layout
+
+\begin_layout Standard
+History has 6 attributes:
+\end_layout
+
+\begin_layout Standard
+1.
+ simulation (Simulation) - a simulation object the history object is linked
+ to;
+\end_layout
+
+\begin_layout Standard
+2.
+ save path (string) - path where folder with history tables will be created;
+\end_layout
+
+\begin_layout Standard
+3.
+ run id (integer) - the timestamp of a moment when History object was created.
+ Used to name the output folder and output files.
+ The output folder in 
+\begin_inset Quotes eld
+\end_inset
+
+save path
+\begin_inset Quotes erd
+\end_inset
+
+ with name 
+\begin_inset Quotes eld
+\end_inset
+
+run id
+\begin_inset Quotes erd
+\end_inset
+
+ is created as soon as 
+\begin_inset Quotes eld
+\end_inset
+
+run id
+\begin_inset Quotes erd
+\end_inset
+
+ is assigned.
+\end_layout
+
+\begin_layout Standard
+4.
+ history table (data frame) - table that stores the information about the
+ number of cells at each time step; Columns: time_step, n_cells.
+\end_layout
+
+\begin_layout Standard
+5.
+ cells table (data frame) - table that stores the information about all
+ the cells at each generation.
+ Columns: generation, cell_id, cell_age, cell_damage, has_divided, has_died.
+\end_layout
+
+\begin_layout Standard
+6.
+ genealogy table (data frame) - table that tracks the genealogy for the
+ simulation.
+ All the cells that were ever present in the simulattion have a corresponding
+ row in this table.
+ Columns: cell_id, parent_id.
+\end_layout
+
+\begin_layout Standard
+History has three actions:
+\end_layout
+
+\begin_layout Standard
+1.
+ Reset
+\end_layout
+
+\begin_layout Standard
+- Reinitialize history table, cells table and genealogy tables as blank
+ tables.
+\end_layout
+
+\begin_layout Standard
+2.
+ Record
+\end_layout
+
+\begin_layout Standard
+- A single row corresponding to the current state of the 
+\begin_inset Quotes eld
+\end_inset
+
+simulation
+\begin_inset Quotes erd
+\end_inset
+
+ object is added to the 
+\begin_inset Quotes eld
+\end_inset
+
+history table
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+- A number of rows corresponding to the number of cells present in the current
+ state of the simulation is added to the 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+- A number of rows corresponding to the number of cells that were not previously
+ recorded is added to the 
+\begin_inset Quotes eld
+\end_inset
+
+genealogy table
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+- If 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+ size exceeds 10000, 
+\begin_inset Quotes eld
+\end_inset
+
+save
+\begin_inset Quotes erd
+\end_inset
+
+ action is performed.
+ This is needed to limit the REM consumption of the running script (high
+ REM consumption slows down the simulation).
+\end_layout
+
+\begin_layout Standard
+3.
+ Save.
+ Takes output folder path as input.
+\end_layout
+
+\begin_layout Standard
+- If not present, in the output folder three files are created: 
+\begin_inset Quotes eld
+\end_inset
+
+history_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+, 
+\begin_inset Quotes eld
+\end_inset
+
+cells_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+genealogy_{run id}.tsv
+\begin_inset Quotes erd
+\end_inset
+
+, where 
+\begin_inset Quotes eld
+\end_inset
+
+history table
+\begin_inset Quotes erd
+\end_inset
+
+, 
+\begin_inset Quotes eld
+\end_inset
+
+cells table
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+genealogy table
+\begin_inset Quotes erd
+\end_inset
+
+ are saved in .tsv format.
+ Is present, the tables are appended to these files without overwriting.
+\end_layout
+
+\begin_layout Standard
+- Reset action is performed.
+\end_layout
+
+\end_body
+\end_document
