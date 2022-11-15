@@ -8,6 +8,7 @@ import json
 import argparse
 import sqlite3
 import atexit
+import matplotlib.pyplot as plt
 
 
 class Chemostat:
@@ -94,6 +95,7 @@ class Cell:
             offspring_asymmetry = self.asymmetry
             if np.random.uniform() < self.mutation_rate:
                 offspring_asymmetry += np.random.choice([self.mutation_step, -self.mutation_step])
+                offspring_asymmetry = min(max(offspring_asymmetry, 0), 1)
             return [Cell(chemostat=self.chemostat,
                          cell_id=offspring_id,
                          parent_id=self.id,
@@ -239,13 +241,84 @@ class SimulationThread:
         for cell in self.chemostat.cells:
             cell.live()
 
+
+    def _start_drawing(self):
+        fig, ax = plt.subplots(3, 1)
+        ax[0].set_title("Population size", fontsize=10)
+        ax[1].set_title("Mean damage", fontsize=10)
+        ax[2].set_title("Asymmetry", fontsize=10)
+
+        nn = []
+        tt = []
+        dd_mean = []
+        dd_max = []
+        dd_min = []
+        aa = []
+        l1, = ax[0].plot(tt, nn, color="blue")
+        l2, = ax[1].plot(tt, dd_mean, color="green")
+        l3, = ax[1].plot(tt, dd_max, color="green", alpha=0.5)
+        l4, = ax[1].plot(tt, dd_min, color="green", alpha=0.5)
+        l5, = ax[2].plot(tt, aa, color="red", alpha=0.5)
+
+        plt.get_current_fig_manager().full_screen_toggle()
+        return fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt
+
+    def _draw_step(self, fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt, step_number):
+        if step_number % 10 == 0:
+            nn.append(self.chemostat.N)
+            tt.append(step_number)
+            damages = np.array([cell.damage for cell in self.chemostat.cells])
+            if len(damages):
+                dd_mean.append(damages.mean())
+                dd_max.append(damages.max())
+                dd_min.append(damages.min())
+                aa.append(np.array([cell.asymmetry for cell in self.chemostat.cells]).mean())
+            else:
+                dd_mean.append(0)
+                dd_max.append(0)
+                dd_min.append(0)
+                aa.append(0)
+            nn = nn[-1000:]
+            dd_mean = dd_mean[-1000:]
+            dd_max = dd_max[-1000:]
+            dd_min = dd_min[-1000:]
+            aa = aa[-1000:]
+
+            tt = tt[-1000:]
+
+        if step_number % 100 == 0:
+            l1.set_ydata(nn)
+            l2.set_ydata(dd_mean)
+            l3.set_ydata(dd_max)
+            l4.set_ydata(dd_min)
+            l5.set_ydata(aa)
+            l1.set_xdata(tt)
+            l2.set_xdata(tt)
+            l3.set_xdata(tt)
+            l4.set_xdata(tt)
+            l5.set_xdata(tt)
+
+            # hst = np.histogram([cell.age for cell in self.chemostat.cells], 30)
+            # l5.set_ydata(hst[0])
+            # l5.set_xdata(hst[1][1:])
+            ax[0].relim()
+            ax[0].autoscale_view(True, True, True)
+            ax[1].relim()
+            ax[1].autoscale_view(True, True, True)
+            ax[2].relim()
+            ax[2].autoscale_view(True, True, True)
+
+            fig.canvas.draw()
+            plt.pause(0.01)
+        return nn, dd_mean, dd_max, dd_min, aa, tt
+
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
         if self.mode == "local":
+            # fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt = self._start_drawing()
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
-                # if self.chemostat.N:
-                #     print(self.chemostat.N, np.array([cell.damage for cell in self.chemostat.cells]).mean())
+                # nn, dd_mean, dd_max, dd_min, aa, tt = self._draw_step(fig, ax, l1, l2, l3, l4, l5, nn, dd_mean, dd_max, dd_min, aa, tt, step_number)
         elif self.mode == "cluster":
             for step_number in range(n_steps):
                 self._step(step_number)
@@ -273,8 +346,9 @@ class History:
                         "cell_id": "INTEGER",
                         "cell_age": "INTEGER",
                         "cell_damage": "REAL",
+                        "cell_asymmetry": "REAL",
                         "has_divided": "BOOLEAN",
-                        "has_died": "BOOLEAN"
+                        "has_died": "TEXT"
                     },
                 "additional": ["FOREIGN KEY(time_step) REFERENCES history (time_step)"]
             },
@@ -323,7 +397,8 @@ class History:
     def reset(self) -> None:
         self.history_table = pd.DataFrame(columns=["time_step", "n_cells"])
         self.cells_table = pd.DataFrame(columns=["time_step", "cell_id", "cell_age",
-                                                 "cell_damage", "has_divided", "has_died"])
+                                                 "cell_damage", "cell_asymmetry", "has_divided", "has_died"])
+        self.cells_table["has_divided"] = self.cells_table["has_divided"].astype(bool)
         self.genealogy_table = pd.DataFrame(columns=["cell_id", "parent_id"])
 
     def record(self, time_step) -> None:
@@ -342,7 +417,7 @@ class History:
              "has_divided": [cell.has_reproduced for cell in cells],
              "has_died": [cell.has_died for cell in cells]
              })
-
+        df_to_add["has_divided"] = df_to_add["has_divided"].astype(bool)
         self.cells_table = pd.concat([self.cells_table, df_to_add], ignore_index=True)
 
         # Make a record in genealogy_table
@@ -382,7 +457,7 @@ if __name__ == "__main__":
                         help="Next_step_damage = current_step_damage * dar + dai")
     parser.add_argument("-dar", "--damage_accumulation_rate", default=0, type=float,
                         help="Next_step_damage = current_step_damage * dar + dai")
-    parser.add_argument("-dlr", "--damage_lethal_threshold", default=1000, type=float)
+    parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float)
     parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
     parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
     parser.add_argument("-v", "--volume", default=1000, type=float)
@@ -390,6 +465,10 @@ if __name__ == "__main__":
     parser.add_argument("-mr", "--mutation_rate", default=0, type=float)
     parser.add_argument("-ms", "--mutation_step", default=0, type=float)
     parser.add_argument("-m", "--mode", default="cluster", type=str)
+    parser.add_argument("-nt", "--nthreads", default=1, type=int)
+    parser.add_argument("-np", "--nprocs", default=1, type=int)
+    parser.add_argument("-ni", "--niterations", default=10000, type=int)
+
     args = parser.parse_args()
     parameters = {
         "chemostat_parameters": {
@@ -419,7 +498,7 @@ if __name__ == "__main__":
     simulation = Simulation(parameters=parameters,
                             n_starting_cells=1,
                             save_path=save_path,
-                            n_threads=1,
-                            n_procs=1,
+                            n_threads=args.nthreads,
+                            n_procs=args.nprocs,
                             mode=args.mode)
-    simulation.run(50000)
+    simulation.run(args.niterations)
