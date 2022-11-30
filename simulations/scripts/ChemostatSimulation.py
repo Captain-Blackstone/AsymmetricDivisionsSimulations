@@ -12,8 +12,21 @@ import sqlite3
 import atexit
 import matplotlib.pyplot as plt
 import logging
+import matplotlib
 
-logging.basicConfig(level=logging.DEBUG, filename="log.log")
+logging.basicConfig(level=logging.INFO, filename="log.log")
+
+
+def non_blocking_pause(interval):
+    backend = plt.rcParams['backend']
+    if backend in matplotlib.rcsetup.interactive_bk:
+        figManager = matplotlib._pylab_helpers.Gcf.get_active()
+        if figManager is not None:
+            canvas = figManager.canvas
+            if canvas.figure.stale:
+                canvas.draw()
+            canvas.start_event_loop(interval)
+            return
 
 
 class Chemostat:
@@ -59,10 +72,13 @@ class Cell:
     damage_accumulation_exponential_component = 0
     damage_accumulation_linear_component = 0.1
     lethal_damage_threshold = 1000
+    damage_survival_dependency = "linear"
 
     # mutation rate
     mutation_rate = 0
     mutation_step = 0.01
+
+    prob_of_division_lookup = None
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -80,16 +96,59 @@ class Cell:
         self._has_reproduced = False
         self._has_died = ""
 
+    # Lookup table for division probability
+    @staticmethod
+    def prob_of_division_for_lookup_table(age: int, N: int) -> float:
+        """
+        Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
+        at a given age.
+        Returns the probability of division for a cell of age "age" in a population of size "N". Does not use a lookup
+        table.
+        """
+        alpha = Cell.critical_nutrient_amount + 1
+        beta = Cell.nutrient_accumulation_rate / N
+        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
+                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
+
+
+    # Function for a cell to learn its division probability
+    @staticmethod
+    def prob_of_division_from_lookup_table(age: int, N: int) -> float:
+        """
+        Returns the probability of division for a cell of age "age" in a population of size "N". Uses the lookup table
+        Cell.PROB_OF_DIVISION, if the table is too small, fills it in using the function Cell.prob_of_division
+        until it becomes large enough.
+        :param age: cell age
+        :param N: population size
+        :return: probability of cell division
+        """
+        max_N, max_age = Cell.prob_of_division_lookup.shape
+        for n in range(max_N + 1, N + 1):
+            Cell.prob_of_division_lookup = np.vstack((Cell.prob_of_division_lookup,
+                                                      np.array([Cell.prob_of_division_for_lookup_table(a, n)
+                                                         for a in range(1, max_age + 1)])))
+            Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
+        max_N, max_age = Cell.prob_of_division_lookup.shape
+        for a in range(max_age + 1, age + 1):
+            Cell.prob_of_division_lookup = np.c_[Cell.prob_of_division_lookup,
+                                                 np.array([Cell.prob_of_division_for_lookup_table(a, n)
+                                                    for n in range(1, max_N + 1)])]
+            Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
+        return Cell.prob_of_division_lookup[N - 1, age - 1]
+
     def live(self) -> None:
         self._age += 1
-        self._damage += Cell.damage_accumulation_exponential_component * self._damage + \
-            Cell.damage_accumulation_linear_component
-        if self.damage > Cell.lethal_damage_threshold:
+        self._damage += \
+            Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component
+        if Cell.damage_survival_dependency == "threshold" and 1 < self.damage / Cell.lethal_damage_threshold or \
+                Cell.damage_survival_dependency == "linear" \
+                and np.random.uniform(0, 1) < self.damage / Cell.lethal_damage_threshold:
             self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
         t1 = time.perf_counter()
-        self._has_reproduced = np.random.uniform(0, 1) < get_prob_of_division(self.age, self.chemostat.N)
+        self._has_reproduced = np.random.uniform(0, 1) < Cell.prob_of_division_from_lookup_table(self.age,
+                                                                                                 self.chemostat.N)
         t2 = time.perf_counter()
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
@@ -168,6 +227,9 @@ class Cell:
         return self._has_died
 
 
+Cell.prob_of_division_lookup = np.array([Cell.prob_of_division_for_lookup_table(age, 1) for age in range(100)]).reshape(1, 100)
+
+
 class Simulation:
     def __init__(self,
                  parameters: dict,
@@ -179,6 +241,7 @@ class Simulation:
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
         Cell.damage_accumulation_linear_component = \
             parameters["cell_parameters"]["damage_accumulation_linear_component"]
+        Cell.damage_survival_dependency = parameters["cell_parameters"]["damage_survival_dependency"]
 
         Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
@@ -186,7 +249,8 @@ class Simulation:
         Cell.mutation_step = parameters["cell_parameters"]["mutation_step"]
         Cell.mutation_rate = parameters["cell_parameters"]["mutation_rate"]
 
-        run_id = round(datetime.datetime.now().timestamp()*1000000)
+        run_id = round(datetime.datetime.now().timestamp() * 1000000)
+        (Path(save_path) / Path(str(run_id))).mkdir(exist_ok=True)
         self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
                                          chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
@@ -241,14 +305,14 @@ class SimulationThread:
         t1 = time.perf_counter()
         self.chemostat.dilute()
         t2 = time.perf_counter()
-        logging.debug(f"{self.chemostat.N} {t2-t1: 0.5f}: dilution")
+        logging.debug(f"{self.chemostat.N} {t2 - t1: 0.5f}: dilution")
         # Alive cells reproduce
         new_cells = []
         for cell in filter(lambda cell_obj: not cell_obj.has_died, self.chemostat.cells):
             offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
             new_cells += cell.reproduce(offspring_id)
         t3 = time.perf_counter()
-        logging.debug(f"{self.chemostat.N} {t3-t2: 0.5f}: reproduction")
+        logging.debug(f"{self.chemostat.N} {t3 - t2: 0.5f}: reproduction")
         # History is recorded
         self.history.record(step_number)
         # Move to the next time step
@@ -261,6 +325,7 @@ class SimulationThread:
         logging.debug(f"{self.chemostat.N} {t4 - t3: 0.5f}: history recording")
         logging.debug(f"{self.chemostat.N} {t5 - t4: 0.5f}: live")
         logging.debug("----")
+
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
         if self.mode == "local":
@@ -284,7 +349,9 @@ class History:
                 "columns":
                     {
                         "time_step": "INTEGER",
-                        "n_cells": "INTEGER"
+                        "n_cells": "INTEGER",
+                        "mean_asymmetry": "REAL",
+                        "mean_damage": "REAL"
                     },
                 "additional": ["PRIMARY KEY(time_step)"]
             },
@@ -323,12 +390,11 @@ class History:
                  thread_id: int):
         self.simulation_thread = simulation_obj
         self.run_id = run_id
-        (Path(save_path) / Path(str(self.run_id))).mkdir(exist_ok=True)
         self.save_path = f"{save_path}/{self.run_id}"
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
-        self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{thread_id}.sqlite")
-        # If the program exist with error, the conenction will still be closed
+        self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
+        # If the program exist with error, the connection will still be closed
         atexit.register(self.SQLdb.close)
         self.create_tables()
         self.reset()
@@ -346,23 +412,19 @@ class History:
         self.SQLdb.commit()
 
     def reset(self) -> None:
-        # self.history_table = pd.DataFrame(columns=["time_step", "n_cells"])
-        # self.cells_table = pd.DataFrame(columns=["time_step", "cell_id", "cell_age",
-        #                                          "cell_damage", "cell_asymmetry", "has_divided", "has_died"])
-        # self.cells_table["has_divided"] = self.cells_table["has_divided"].astype(bool)
-        # self.genealogy_table = pd.DataFrame(columns=["cell_id", "parent_id"])
         self.history_table, self.cells_table, self.genealogy_table = [], [], []
 
     def record(self, time_step) -> None:
         # Make a record history_table
-        t1 = time.perf_counter()
         row = pd.DataFrame.from_dict(
-            {"time_step": [time_step], "n_cells": [self.simulation_thread.chemostat.N]})
-        t2 = time.perf_counter()
+            {"time_step": [time_step],
+             "n_cells": [self.simulation_thread.chemostat.N],
+             "mean_asymmetry": [np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()],
+             "mean_damage": [np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()],
+             }
+        )
 
-        # self.history_table = pd.concat([self.history_table, row], ignore_index=True)
         self.history_table.append(row)
-        t3 = time.perf_counter()
 
         # Make a record in cells_table
         cells = self.simulation_thread.chemostat.cells
@@ -371,16 +433,13 @@ class History:
              "cell_id": [cell.id for cell in cells],
              "cell_age": [cell.age for cell in cells],
              "cell_damage": [cell.damage for cell in cells],
+             "cell_asymmetry": [cell.asymmetry for cell in cells],
              "has_divided": [bool(cell.has_reproduced) for cell in cells],
              "has_died": [cell.has_died for cell in cells]
              })
         df_to_add = df_to_add.reset_index(drop=True)
-        t5 = time.perf_counter()
 
-
-        # self.cells_table = pd.concat([self.cells_table, df_to_add], ignore_index=True)
-        self.cells_table.append(df_to_add)
-        t7 = time.perf_counter()
+        # self.cells_table.append(df_to_add)
 
         # Make a record in genealogy_table
         cells = list(filter(lambda el: el.id > self.max_cell_in_genealogy,
@@ -390,30 +449,18 @@ class History:
                 {"cell_id": [cell.id for cell in cells],
                  "parent_id": [cell.parent_id for cell in cells],
                  })
-            # self.genealogy_table = pd.concat([self.genealogy_table, df_to_add], ignore_index=True)
             self.genealogy_table.append(df_to_add)
             self.max_cell_in_genealogy = max(df_to_add.cell_id)
-        t12 = t7
-        if len(self.cells_table) > 900:
+        if len(self.cells_table) > 900 or len(self.history_table) > 2000:
             self.save()
-            t12 = time.perf_counter()
-        logging.debug(f"{self.simulation_thread.chemostat.N} {t2 - t1}: form history row")
-        logging.debug(f"{self.simulation_thread.chemostat.N} {t3 - t2}: concatenate history row")
-        logging.debug(f"{self.simulation_thread.chemostat.N} {t5 - t3}: form cells row ")
-        logging.debug(f"{self.simulation_thread.chemostat.N} {t7 - t5}: concatenate cells row")
-        logging.debug(f"{self.simulation_thread.chemostat.N} {t12 - t7}: save to sql")
 
     def save(self) -> None:
         for table, stem in zip([self.history_table, self.cells_table, self.genealogy_table],
                                ["history", "cells", "genealogy"]):
-
+            if stem == "cells":
+                continue
             table = pd.concat(table, ignore_index=True)
             table.to_sql(stem, self.SQLdb, if_exists='append', index=False)
-            # path = Path(f"{self.save_path}/{stem}_{self.run_id}_{self.thread_id}.tsv")
-            # if path.exists():
-            #     table.to_csv(path, mode="a", sep="\t", index=False, header=False)
-            # else:
-            #     table.to_csv(path, sep="\t", index=False)
         self.SQLdb.commit()
         self.reset()
 
@@ -427,8 +474,10 @@ class Drawer:
         self.update_time = 100  # number of steps between figure updates
         self.resolution = 10  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
-
+        plt.ion()
         self.fig, self.ax = plt.subplots(3, 1)
+        plt.show(block=False)
+        atexit.register(plt.close)
         for i, title in enumerate(["Population size", "Mean damage", "Asymmetry"]):
             self.ax[i].set_title(title, fontsize=10)
 
@@ -447,9 +496,17 @@ class Drawer:
              "update_function":
                  lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2,  "color": "red", "alpha": 1,
+            {"ax_num": 2, "color": "red", "alpha": 1,
              "update_function":
                  lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 2, "color": "red", "alpha": 0.5,
+             "update_function":
+                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).max()
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 2, "color": "red", "alpha": 0.5,
+             "update_function":
+                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).min()
                  if self.simulation_thread.chemostat.N else 0},
         ]
 
@@ -476,7 +533,7 @@ class Drawer:
             for plot in self.plots:
                 plot.update_plot()
             self.fig.canvas.draw()
-            plt.pause(0.01)
+            non_blocking_pause(0.01)
 
 
 class Plot:
@@ -508,37 +565,6 @@ class Plot:
         self.ax.autoscale_view(True, True, True)
 
 
-# Lookup table for division probability
-def prob_of_division(age, N) -> float:
-    """
-    Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
-    at a given age
-    """
-    alpha = Cell.critical_nutrient_amount + 1
-    beta = Cell.nutrient_accumulation_rate / N
-    return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
-                                                         gamma.pdf(age, a=alpha, scale=1 / beta))
-
-
-PROB_OF_DIVISION = np.array([prob_of_division(age, 1) for age in range(100)]).reshape(1, 100)
-
-
-# Function for a cell to learn its division probability
-def get_prob_of_division(age, N):
-    global PROB_OF_DIVISION
-    max_N, max_age = PROB_OF_DIVISION.shape
-    for n in range(max_N+1, N+1):
-        PROB_OF_DIVISION = np.vstack((PROB_OF_DIVISION,
-                                      np.array([prob_of_division(a, n) for a in range(1, max_age+1)])))
-        PROB_OF_DIVISION = np.nan_to_num(PROB_OF_DIVISION)
-    max_N, max_age = PROB_OF_DIVISION.shape
-    for a in range(max_age + 1, age + 1):
-        PROB_OF_DIVISION = np.c_[PROB_OF_DIVISION, np.array([prob_of_division(a, n) for n in range(1, max_N+1)])]
-        PROB_OF_DIVISION = np.nan_to_num(PROB_OF_DIVISION)
-    return PROB_OF_DIVISION[N-1, age-1]
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
@@ -547,6 +573,7 @@ if __name__ == "__main__":
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * dar + dai")
     parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float)
+    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str)
     parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
     parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
     parser.add_argument("-v", "--volume", default=1000, type=float)
@@ -568,6 +595,7 @@ if __name__ == "__main__":
             "damage_accumulation_linear_component": args.damage_accumulation_linear_component,
             "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
             "lethal_damage_threshold": args.damage_lethal_threshold,
+            "damage_survival_dependency": args.damage_survival_dependency,
             "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
             "critical_nutrient_amount": args.nutrient_critical_amount,
             "mutation_rate": args.mutation_rate,
