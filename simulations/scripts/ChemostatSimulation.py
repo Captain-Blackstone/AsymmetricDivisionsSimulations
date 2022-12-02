@@ -136,6 +136,37 @@ class Cell:
             Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
         return Cell.prob_of_division_lookup[N - 1, age - 1]
 
+    @staticmethod
+    def archive_lookup_table():
+        """
+        Save the lookup table for the probability of cell division from its age and population size.
+        Needed for subsequent runs - it's cheaper to load the table than to generate it from scratch.
+        :return:
+        """
+        with open(f"../division_probability_tables/{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}", "w") as fl:
+            for line in Cell.prob_of_division_lookup:
+                fl.write(",".join(map(str, line)) + "\n")
+
+    @staticmethod
+    def generate_initial_lookup_table():
+        """
+        Generate a small lookup table for the probability of divisin that can be further extended.
+        If a lookup table for the simulation parameters is already present in ../division_probability_tables,
+        load the table from file.
+        :return:
+        """
+        matrix = []
+        file = Path(f"../division_probability_tables/"
+                    f"{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}")
+        if file.exists():
+            with file.open("r") as fl:
+                for line in fl.readlines():
+                    matrix.append(list(map(float, line.strip().split(","))))
+            return np.array(matrix)
+        else:
+            return np.array([Cell.prob_of_division_for_lookup_table(age, 1) for age in range(100)]).reshape(1, 100)
+
+
     def live(self) -> None:
         self._age += 1
         self._damage += \
@@ -227,9 +258,6 @@ class Cell:
         return self._has_died
 
 
-Cell.prob_of_division_lookup = np.array([Cell.prob_of_division_for_lookup_table(age, 1) for age in range(100)]).reshape(1, 100)
-
-
 class Simulation:
     def __init__(self,
                  parameters: dict,
@@ -248,7 +276,9 @@ class Simulation:
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
         Cell.mutation_step = parameters["cell_parameters"]["mutation_step"]
         Cell.mutation_rate = parameters["cell_parameters"]["mutation_rate"]
-
+        Cell.prob_of_division_lookup = Cell.generate_initial_lookup_table()
+        if mode != "cluster":
+            atexit.register(Cell.archive_lookup_table)
         run_id = round(datetime.datetime.now().timestamp() * 1000000)
         (Path(save_path) / Path(str(run_id))).mkdir(exist_ok=True)
         self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
@@ -479,6 +509,9 @@ class History:
 
 
 class Drawer:
+    """
+    Class that draws the plots in the interactive mode.
+    """
     def __init__(self, simulation_thread: SimulationThread):
         self.simulation_thread = simulation_thread
         self.update_time = 100  # number of steps between figure updates
@@ -532,6 +565,13 @@ class Drawer:
         plt.get_current_fig_manager().full_screen_toggle()
 
     def draw_step(self, step_number):
+        """
+        Update all the Plots of the Drawer.
+        Update the data only each resolution time_step,
+        Update the plot only each update_time time_step.
+        :param step_number:
+        :return:
+        """
         # Collect data each self.resolution steps
         if step_number % self.resolution == 0:
             for plot in self.plots:
@@ -542,11 +582,15 @@ class Drawer:
                 plot.update_data()
             for plot in self.plots:
                 plot.update_plot()
-            self.fig.canvas.draw()
+            # self.fig.canvas.draw() # seems like this line is not needed. I will delete it later if nothing goes wrong.
             non_blocking_pause(0.01)
 
 
 class Plot:
+    """
+    Helper class for a Drawer class.
+    A single Plot object can store and update data it needs to plot and plot it on a relevant axis.
+    """
     def __init__(self,
                  drawer: Drawer,
                  plot_how_many: int,
@@ -561,18 +605,33 @@ class Plot:
         self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
 
     def collect_data(self, step_num: int):
+        """
+        Update xdata and ydata lists.
+        xdata is updated by appending the step_num input value into the xdata list.
+        ydata is updated by calling update_function of the object.
+        :param step_num:
+        :return:
+        """
         self.xdata.append(step_num)
         self.ydata.append(self.update_function())
         self.xdata = self.xdata[-self.plot_how_many:]
         self.ydata = self.ydata[-self.plot_how_many:]
 
     def update_data(self):
+        """
+        put the current xdata and ydata on the plot
+        :return:
+        """
         self.layer.set_ydata(self.ydata)
         self.layer.set_xdata(self.xdata)
 
     def update_plot(self):
+        """
+        rescale the axis
+        :return:
+        """
         self.ax.relim()
-        self.ax.autoscale_view(True, True, True)
+        self.ax.autoscale_view(tight=True)
 
 
 if __name__ == "__main__":
@@ -590,10 +649,11 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--dilution_rate", default=1, type=float)
     parser.add_argument("-mr", "--mutation_rate", default=0, type=float)
     parser.add_argument("-ms", "--mutation_step", default=0, type=float)
-    parser.add_argument("-m", "--mode", default="cluster", type=str)
+    parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
     parser.add_argument("-ni", "--niterations", default=10000, type=int)
+    # noinspection PyTypeChecker
     parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
