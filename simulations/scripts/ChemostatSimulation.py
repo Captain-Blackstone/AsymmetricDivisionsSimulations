@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import logging
 import matplotlib
 
+TIME_STEP_DURATION = 1
 logging.basicConfig(level=logging.INFO, filename="log.log")
 
 
@@ -51,7 +52,7 @@ class Chemostat:
 
     def dilute(self) -> None:
         expected_n_cells_to_remove = self.D * self.N / self.V
-        n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove, 1)[0]
+        n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove*TIME_STEP_DURATION, 1)[0]
         dead_cells = np.random.choice(self.cells, size=min(self.N, n_cells_to_remove), replace=False)
         for cell in dead_cells:
             cell.die(cause="dilution")
@@ -106,9 +107,8 @@ class Cell:
         table.
         """
         alpha = Cell.critical_nutrient_amount + 1
-        beta = Cell.nutrient_accumulation_rate / N
-        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
-                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
+        beta = (Cell.nutrient_accumulation_rate / N) * TIME_STEP_DURATION
+        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta), gamma.pdf(age, a=alpha, scale=1 / beta))
 
 
     # Function for a cell to learn its division probability
@@ -236,7 +236,7 @@ class Simulation:
                  n_starting_cells: int,
                  save_path: str,
                  mode: str,
-                 n_threads=1, n_procs=1):
+                 n_threads: int, n_procs: int, write_cells_table: bool):
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
         Cell.damage_accumulation_linear_component = \
@@ -258,7 +258,8 @@ class Simulation:
                                              n_cells=n_starting_cells,
                                              asymmetry=parameters["asymmetry"]),
                                          save_path=save_path,
-                                         mode=mode) for i in range(n_threads)]
+                                         mode=mode,
+                                         write_cells_table=write_cells_table) for i in range(n_threads)]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
         # Write parameters needed to identify simulation
@@ -290,13 +291,15 @@ class SimulationThread:
                  thread_id: int,
                  chemostat_obj: Chemostat,
                  save_path: str,
-                 mode: str):
+                 mode: str,
+                 write_cells_table: bool):
         self.mode = mode
         self.chemostat = chemostat_obj
         self.history = History(self,
                                save_path=save_path,
                                run_id=run_id,
-                               thread_id=thread_id)
+                               thread_id=thread_id,
+                               write_cells_table=write_cells_table)
         if self.mode == "interactive":
             self.drawer = Drawer(self)
 
@@ -387,7 +390,8 @@ class History:
                  simulation_obj: SimulationThread,
                  save_path: str,
                  run_id: int,
-                 thread_id: int):
+                 thread_id: int,
+                 write_cells_table: bool):
         self.simulation_thread = simulation_obj
         self.run_id = run_id
         self.save_path = f"{save_path}/{self.run_id}"
@@ -400,12 +404,17 @@ class History:
         self.reset()
         # This is needed not to record the same cell twice in the genealogy table
         self.max_cell_in_genealogy = -1
+        self.write_cells_table = write_cells_table
 
     def create_tables(self) -> None:
         for table in self.tables:
+            if table == "cells" and not write_cells_table:
+                continue
             columns = [" ".join([key, val]) for key, val in self.tables[table]["columns"].items()]
             content = ', '.join(columns)
             for element in self.tables[table]["additional"]:
+                if "REFERENCES cells" in element and not write_cells_table:
+                    continue
                 content += ", " + element
             query = f"CREATE TABLE {table} ({content});"
             self.SQLdb.execute(query)
@@ -427,19 +436,19 @@ class History:
         self.history_table.append(row)
 
         # Make a record in cells_table
-        cells = self.simulation_thread.chemostat.cells
-        df_to_add = pd.DataFrame.from_dict(
-            {"time_step": [time_step for _ in range(len(cells))],
-             "cell_id": [cell.id for cell in cells],
-             "cell_age": [cell.age for cell in cells],
-             "cell_damage": [cell.damage for cell in cells],
-             "cell_asymmetry": [cell.asymmetry for cell in cells],
-             "has_divided": [bool(cell.has_reproduced) for cell in cells],
-             "has_died": [cell.has_died for cell in cells]
-             })
-        df_to_add = df_to_add.reset_index(drop=True)
-
-        # self.cells_table.append(df_to_add)
+        if self.write_cells_table:
+            cells = self.simulation_thread.chemostat.cells
+            df_to_add = pd.DataFrame.from_dict(
+                {"time_step": [time_step for _ in range(len(cells))],
+                 "cell_id": [cell.id for cell in cells],
+                 "cell_age": [cell.age for cell in cells],
+                 "cell_damage": [cell.damage for cell in cells],
+                 "cell_asymmetry": [cell.asymmetry for cell in cells],
+                 "has_divided": [bool(cell.has_reproduced) for cell in cells],
+                 "has_died": [cell.has_died for cell in cells]
+                 })
+            df_to_add = df_to_add.reset_index(drop=True)
+            self.cells_table.append(df_to_add)
 
         # Make a record in genealogy_table
         cells = list(filter(lambda el: el.id > self.max_cell_in_genealogy,
@@ -457,10 +466,11 @@ class History:
     def save(self) -> None:
         for table, stem in zip([self.history_table, self.cells_table, self.genealogy_table],
                                ["history", "cells", "genealogy"]):
-            if stem == "cells":
+            if stem == "cells" and not self.write_cells_table:
                 continue
-            table = pd.concat(table, ignore_index=True)
-            table.to_sql(stem, self.SQLdb, if_exists='append', index=False)
+            if table:
+                table = pd.concat(table, ignore_index=True)
+                table.to_sql(stem, self.SQLdb, if_exists='append', index=False)
         self.SQLdb.commit()
         self.reset()
 
@@ -584,6 +594,7 @@ if __name__ == "__main__":
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
     parser.add_argument("-ni", "--niterations", default=10000, type=int)
+    parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
     parameters = {
@@ -612,10 +623,17 @@ if __name__ == "__main__":
         Path("data/").mkdir(exist_ok=True)
         save_path = "./data/"
 
+    if args.cells_table:
+        write_cells_table = True
+    else:
+        write_cells_table = False
+
     simulation = Simulation(parameters=parameters,
                             n_starting_cells=1,
                             save_path=save_path,
                             n_threads=args.nthreads,
                             n_procs=args.nprocs,
-                            mode=args.mode)
+                            mode=args.mode,
+                            write_cells_table=write_cells_table
+                            )
     simulation.run(args.niterations)
