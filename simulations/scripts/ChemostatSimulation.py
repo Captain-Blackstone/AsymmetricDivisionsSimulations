@@ -1,3 +1,4 @@
+import math
 import time
 
 import pandas as pd
@@ -13,8 +14,10 @@ import atexit
 import matplotlib.pyplot as plt
 import logging
 import matplotlib
+from itertools import filterfalse
 
 TIME_STEP_DURATION = 1
+precision = 2
 logging.basicConfig(level=logging.INFO, filename="log.log")
 
 
@@ -97,9 +100,68 @@ class Cell:
         self._has_reproduced = False
         self._has_died = ""
 
-    # Lookup table for division probability
     @staticmethod
-    def prob_of_division_for_lookup_table(age: int, N: int) -> float:
+    def prob_of_division_for_lookup_table(age: int, beta: float) -> float:
+        """
+        Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
+        at a given age.
+        Returns the probability of division for a cell of age "age" in a population of size "N". Does not use a lookup
+        table.
+        """
+        alpha = Cell.critical_nutrient_amount + 1
+        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
+                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
+
+    @staticmethod
+    def generate_initial_lookup_table() -> np.array:
+        """
+        Generate a small lookup table for the probability of divisin that can be further extended.
+        If a lookup table for the simulation parameters is already present in ../division_probability_tables,
+        load the table from file.
+        :return:
+        """
+        matrix = []
+        file = Path(f"../division_probability_tables/"
+                    f"{Cell.critical_nutrient_amount}")
+        if file.exists():
+            with file.open("r") as fl:
+                for line in fl.readlines():
+                    matrix.append(list(map(float, line.strip().split(","))))
+            return np.array(matrix)
+        else:
+            return np.array(
+                [Cell.prob_of_division_for_lookup_table(age, 1 / 10 ** precision) for age in range(1, 100)]).reshape(1, 99)
+
+    @staticmethod
+    def prob_of_division_from_lookup_table(age: int, beta: float) -> float:
+        """
+        Returns the probability of division for a cell of age "age" in a population of size "N". Uses the lookup table
+        Cell.PROB_OF_DIVISION, if the table is too small, fills it in using the function Cell.prob_of_division
+        until it becomes large enough.
+        :param age: cell age
+        :param beta: beta from cell cycle duration distribution
+        :return: probability of cell division
+        """
+        max_beta, max_age = Cell.prob_of_division_lookup.shape
+        max_beta /= 10 ** precision
+        current_beta = max_beta
+        while current_beta < beta:
+            current_beta += 1 / 10 ** precision
+            prob_of_division_lookup = np.vstack((Cell.prob_of_division_lookup,
+                                                 np.array([Cell.prob_of_division_for_lookup_table(a, current_beta)
+                                                           for a in range(1, max_age + 1)])))
+            Cell.prob_of_division_lookup = np.nan_to_num(prob_of_division_lookup)
+        max_beta, max_age = Cell.prob_of_division_lookup.shape
+        max_beta /= 10 ** precision
+        for a in range(max_age + 1, age + 1):
+            prob_of_division_lookup = np.c_[Cell.prob_of_division_lookup,
+            np.array([Cell.prob_of_division_for_lookup_table(a, b) for b in
+                      np.linspace(0, max_beta, max_beta * 10 ** precision + 1)[1:]])]
+            Cell.prob_of_division_lookup = np.nan_to_num(prob_of_division_lookup)
+        return Cell.prob_of_division_lookup[int(beta * 10 ** precision) - 1, age - 1]
+
+    @staticmethod
+    def prob_of_division_for_lookup_table_old(age: int, N: int) -> float:
         """
         Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
         at a given age.
@@ -108,12 +170,11 @@ class Cell:
         """
         alpha = Cell.critical_nutrient_amount + 1
         beta = (Cell.nutrient_accumulation_rate / N) * TIME_STEP_DURATION
-        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta), gamma.pdf(age, a=alpha, scale=1 / beta))
+        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
+                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
 
-
-    # Function for a cell to learn its division probability
     @staticmethod
-    def prob_of_division_from_lookup_table(age: int, N: int) -> float:
+    def prob_of_division_from_lookup_table_old(age: int, N: int) -> float:
         """
         Returns the probability of division for a cell of age "age" in a population of size "N". Uses the lookup table
         Cell.PROB_OF_DIVISION, if the table is too small, fills it in using the function Cell.prob_of_division
@@ -125,30 +186,19 @@ class Cell:
         max_N, max_age = Cell.prob_of_division_lookup.shape
         for n in range(max_N + 1, N + 1):
             Cell.prob_of_division_lookup = np.vstack((Cell.prob_of_division_lookup,
-                                                      np.array([Cell.prob_of_division_for_lookup_table(a, n)
-                                                         for a in range(1, max_age + 1)])))
+                                                      np.array([Cell.prob_of_division_for_lookup_table_old(a, n)
+                                                                for a in range(1, max_age + 1)])))
             Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
         max_N, max_age = Cell.prob_of_division_lookup.shape
         for a in range(max_age + 1, age + 1):
             Cell.prob_of_division_lookup = np.c_[Cell.prob_of_division_lookup,
-                                                 np.array([Cell.prob_of_division_for_lookup_table(a, n)
-                                                    for n in range(1, max_N + 1)])]
+                                                 np.array([Cell.prob_of_division_for_lookup_table_old(a, n)
+                                                           for n in range(1, max_N + 1)])]
             Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
         return Cell.prob_of_division_lookup[N - 1, age - 1]
 
     @staticmethod
-    def archive_lookup_table():
-        """
-        Save the lookup table for the probability of cell division from its age and population size.
-        Needed for subsequent runs - it's cheaper to load the table than to generate it from scratch.
-        :return:
-        """
-        with open(f"../division_probability_tables/{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}", "w") as fl:
-            for line in Cell.prob_of_division_lookup:
-                fl.write(",".join(map(str, line)) + "\n")
-
-    @staticmethod
-    def generate_initial_lookup_table():
+    def generate_initial_lookup_table_old():
         """
         Generate a small lookup table for the probability of divisin that can be further extended.
         If a lookup table for the simulation parameters is already present in ../division_probability_tables,
@@ -164,8 +214,19 @@ class Cell:
                     matrix.append(list(map(float, line.strip().split(","))))
             return np.array(matrix)
         else:
-            return np.array([Cell.prob_of_division_for_lookup_table(age, 1) for age in range(100)]).reshape(1, 100)
+            return np.array([Cell.prob_of_division_for_lookup_table_old(age, 1) for age in range(100)]).reshape(1, 100)
 
+    @staticmethod
+    def archive_lookup_table():
+        """
+        Save the lookup table for the probability of cell division from its age and population size.
+        Needed for subsequent runs - it's cheaper to load the table than to generate it from scratch.
+        :return:
+        """
+        with open(f"../division_probability_tables/"
+                  f"{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}", "w") as fl:
+            for line in Cell.prob_of_division_lookup:
+                fl.write(",".join(map(str, line)) + "\n")
 
     def live(self) -> None:
         self._age += 1
@@ -178,8 +239,8 @@ class Cell:
 
     def reproduce(self, offspring_id: int) -> list:
         t1 = time.perf_counter()
-        self._has_reproduced = np.random.uniform(0, 1) < Cell.prob_of_division_from_lookup_table(self.age,
-                                                                                                 self.chemostat.N)
+        beta = Cell.nutrient_accumulation_rate / self.chemostat.N / self.damage
+        self._has_reproduced = np.random.uniform(0, 1) < Cell.prob_of_division_from_lookup_table(self.age, beta)
         t2 = time.perf_counter()
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
@@ -341,7 +402,7 @@ class SimulationThread:
         logging.debug(f"{self.chemostat.N} {t2 - t1: 0.5f}: dilution")
         # Alive cells reproduce
         new_cells = []
-        for cell in filter(lambda cell_obj: not cell_obj.has_died, self.chemostat.cells):
+        for cell in filterfalse(lambda cell_obj: cell_obj.has_died, self.chemostat.cells):
             offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
             new_cells += cell.reproduce(offspring_id)
         t3 = time.perf_counter()
@@ -553,14 +614,12 @@ class Drawer:
                  if self.simulation_thread.chemostat.N else 0},
         ]
 
-        self.plots = []
-        for data_dict in data_dicts:
-            self.plots.append(Plot(self,
-                                   self.plot_how_many,
-                                   self.ax[data_dict["ax_num"]],
-                                   data_dict["color"],
-                                   data_dict["alpha"],
-                                   data_dict["update_function"]))
+        self.plots = [Plot(self,
+                           self.plot_how_many,
+                           self.ax[data_dict["ax_num"]],
+                           data_dict["color"],
+                           data_dict["alpha"],
+                           data_dict["update_function"]) for data_dict in data_dicts]
 
         plt.get_current_fig_manager().full_screen_toggle()
 
@@ -642,7 +701,7 @@ if __name__ == "__main__":
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * dar + dai")
     parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float)
-    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str)
+    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str, choices=["linear", "threshold"])
     parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
     parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
     parser.add_argument("-v", "--volume", default=1000, type=float)
