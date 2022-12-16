@@ -52,6 +52,7 @@ class Chemostat:
 
     def populate_with_cells(self, n_cells: int, asymmetry: float) -> None:
         self._cells += [Cell(chemostat=self, cell_id=i, asymmetry=asymmetry) for i in range(n_cells)]
+        self._n = len(self._cells)
 
     def dilute(self) -> None:
         expected_n_cells_to_remove = self.D * self.N / self.V
@@ -82,7 +83,9 @@ class Cell:
     mutation_rate = 0
     mutation_step = 0.01
 
-    prob_of_division_lookup = None
+    # lambda_large_lookup
+    lambda_large_lookup_path = f"../tables/lambda_large_lookup_table.csv"
+    lambda_large_lookup = None
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -101,137 +104,76 @@ class Cell:
         self._has_died = ""
 
     @staticmethod
-    def prob_of_division_for_lookup_table(age: int, beta: float) -> float:
-        """
-        Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
-        at a given age.
-        Returns the probability of division for a cell of age "age" in a population of size "N". Does not use a lookup
-        table.
-        """
-        alpha = Cell.critical_nutrient_amount + 1
-        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
-                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
+    def lambda_large(x: float, alpha: float, beta=1.0) -> float:
+        mu = alpha / beta  # expected value of the gamma-distribution
+        age = int((alpha / beta) * x)  # cell age = expected age * (fraction of current age from the expected age)
+        return mu * gamma.pdf(age, a=alpha, scale=1 / beta) / (1 - gamma.cdf(age, a=alpha, scale=1 / beta))
 
     @staticmethod
-    def generate_initial_lookup_table() -> np.array:
+    def load_lookup_table_for_lambda_large() -> pd.DataFrame:
         """
         Generate a small lookup table for the probability of divisin that can be further extended.
-        If a lookup table for the simulation parameters is already present in ../division_probability_tables,
+        If a lookup table for the simulation parameters is already present in ../tables,
         load the table from file.
         :return:
         """
-        matrix = []
-        file = Path(f"../division_probability_tables/"
-                    f"{Cell.critical_nutrient_amount}")
+
+        def generate_the_table(lower_alpha: int, higher_alpha: int, lower_x: float, higher_x: float, x_steps: int) -> pd.DataFrame:
+            logging.info(f"Generating the lookup table for various critical nutrient amounts. Please, wait. We have "
+                         f"{higher_alpha-lower_alpha} lines to process...")
+            alphas = np.arange(lower_alpha, higher_alpha+1)
+            xx = np.linspace(lower_x, higher_x, x_steps)
+            table = np.zeros((len(alphas), len(xx)))
+            for i, alpha in enumerate(alphas):
+                print("|", end="")
+                for j, x in enumerate(xx):
+                    table[i, j] = Cell.lambda_large(x, alpha)
+            print(" Done")
+            return pd.DataFrame(table, columns=[str(x) for x in xx.round(3)], index=alphas)
+
+        file = Path(Cell.lambda_large_lookup_path)
         if file.exists():
-            with file.open("r") as fl:
-                for line in fl.readlines():
-                    matrix.append(list(map(float, line.strip().split(","))))
-            return np.array(matrix)
+            lookup_table = pd.read_csv(str(file), index_col=0)
         else:
-            return np.array(
-                [Cell.prob_of_division_for_lookup_table(age, 1 / 10 ** precision) for age in range(1, 100)]).reshape(1, 99)
+            lookup_table = generate_the_table(lower_alpha=1, higher_alpha=50, lower_x=0, higher_x=10,
+                                              x_steps=10001)
+        if Cell.critical_nutrient_amount not in lookup_table.index:
+            added_lookup_table = generate_the_table(lower_alpha=max(lookup_table.index),
+                                                    higher_alpha=Cell.critical_nutrient_amount,
+                                                    lower_x=0, higher_x=10,
+                                                    x_steps=10001)
+            lookup_table = pd.concat([lookup_table, added_lookup_table], ignore_index=True)
+        return lookup_table
 
     @staticmethod
-    def prob_of_division_from_lookup_table(age: int, beta: float) -> float:
-        """
-        Returns the probability of division for a cell of age "age" in a population of size "N". Uses the lookup table
-        Cell.PROB_OF_DIVISION, if the table is too small, fills it in using the function Cell.prob_of_division
-        until it becomes large enough.
-        :param age: cell age
-        :param beta: beta from cell cycle duration distribution
-        :return: probability of cell division
-        """
-        max_beta, max_age = Cell.prob_of_division_lookup.shape
-        max_beta /= 10 ** precision
-        current_beta = max_beta
-        while current_beta < beta:
-            current_beta += 1 / 10 ** precision
-            prob_of_division_lookup = np.vstack((Cell.prob_of_division_lookup,
-                                                 np.array([Cell.prob_of_division_for_lookup_table(a, current_beta)
-                                                           for a in range(1, max_age + 1)])))
-            Cell.prob_of_division_lookup = np.nan_to_num(prob_of_division_lookup)
-        max_beta, max_age = Cell.prob_of_division_lookup.shape
-        max_beta /= 10 ** precision
-        for a in range(max_age + 1, age + 1):
-            prob_of_division_lookup = np.c_[Cell.prob_of_division_lookup,
-            np.array([Cell.prob_of_division_for_lookup_table(a, b) for b in
-                      np.linspace(0, max_beta, max_beta * 10 ** precision + 1)[1:]])]
-            Cell.prob_of_division_lookup = np.nan_to_num(prob_of_division_lookup)
-        return Cell.prob_of_division_lookup[int(beta * 10 ** precision) - 1, age - 1]
-
+    def add_columns_to_lambda_large_lookup_table(x: float) -> None:
+        max_current_x = float(Cell.lambda_large_lookup.columns[-1])
+        while max_current_x < x:
+            max_current_x += 0.001
+            Cell.lambda_large_lookup[str(max_current_x)] = \
+                [Cell.lambda_large(max_current_x, alpha) for alpha in Cell.lambda_large_lookup.index]
     @staticmethod
-    def prob_of_division_for_lookup_table_old(age: int, N: int) -> float:
-        """
-        Instantaneous probability of cell to accumulate a material accumulating at rate beta to an amount alpha-1
-        at a given age.
-        Returns the probability of division for a cell of age "age" in a population of size "N". Does not use a lookup
-        table.
-        """
-        alpha = Cell.critical_nutrient_amount + 1
-        beta = (Cell.nutrient_accumulation_rate / N) * TIME_STEP_DURATION
-        return gamma.pdf(age, a=alpha, scale=1 / beta) / max(1 - gamma.cdf(age, a=alpha, scale=1 / beta),
-                                                             gamma.pdf(age, a=alpha, scale=1 / beta))
-
-    @staticmethod
-    def prob_of_division_from_lookup_table_old(age: int, N: int) -> float:
-        """
-        Returns the probability of division for a cell of age "age" in a population of size "N". Uses the lookup table
-        Cell.PROB_OF_DIVISION, if the table is too small, fills it in using the function Cell.prob_of_division
-        until it becomes large enough.
-        :param age: cell age
-        :param N: population size
-        :return: probability of cell division
-        """
-        max_N, max_age = Cell.prob_of_division_lookup.shape
-        for n in range(max_N + 1, N + 1):
-            Cell.prob_of_division_lookup = np.vstack((Cell.prob_of_division_lookup,
-                                                      np.array([Cell.prob_of_division_for_lookup_table_old(a, n)
-                                                                for a in range(1, max_age + 1)])))
-            Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
-        max_N, max_age = Cell.prob_of_division_lookup.shape
-        for a in range(max_age + 1, age + 1):
-            Cell.prob_of_division_lookup = np.c_[Cell.prob_of_division_lookup,
-                                                 np.array([Cell.prob_of_division_for_lookup_table_old(a, n)
-                                                           for n in range(1, max_N + 1)])]
-            Cell.prob_of_division_lookup = np.nan_to_num(Cell.prob_of_division_lookup)
-        return Cell.prob_of_division_lookup[N - 1, age - 1]
-
-    @staticmethod
-    def generate_initial_lookup_table_old():
-        """
-        Generate a small lookup table for the probability of divisin that can be further extended.
-        If a lookup table for the simulation parameters is already present in ../division_probability_tables,
-        load the table from file.
-        :return:
-        """
-        matrix = []
-        file = Path(f"../division_probability_tables/"
-                    f"{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}")
-        if file.exists():
-            with file.open("r") as fl:
-                for line in fl.readlines():
-                    matrix.append(list(map(float, line.strip().split(","))))
-            return np.array(matrix)
-        else:
-            return np.array([Cell.prob_of_division_for_lookup_table_old(age, 1) for age in range(100)]).reshape(1, 100)
-
-    @staticmethod
-    def archive_lookup_table():
+    def archive_lookup_table() -> None:
         """
         Save the lookup table for the probability of cell division from its age and population size.
         Needed for subsequent runs - it's cheaper to load the table than to generate it from scratch.
         :return:
         """
-        with open(f"../division_probability_tables/"
-                  f"{Cell.critical_nutrient_amount}_{Cell.nutrient_accumulation_rate}_{TIME_STEP_DURATION}", "w") as fl:
-            for line in Cell.prob_of_division_lookup:
-                fl.write(",".join(map(str, line)) + "\n")
+        Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
+
+    def prob_of_division_from_lookup_table(self) -> float:
+        mu = Cell.critical_nutrient_amount / (Cell.nutrient_accumulation_rate / self.chemostat.N ) # / self.damage
+        x = round(self.age / mu, 3)
+        if str(x) not in Cell.lambda_large_lookup.columns:
+            Cell.add_columns_to_lambda_large_lookup_table(x)
+        lambda_small = Cell.lambda_large_lookup.loc[Cell.critical_nutrient_amount, str(x)] / mu
+        return TIME_STEP_DURATION * lambda_small
 
     def live(self) -> None:
         self._age += 1
         self._damage += \
-            Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component
+            (Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component) \
+            * TIME_STEP_DURATION
         if Cell.damage_survival_dependency == "threshold" and 1 < self.damage / Cell.lethal_damage_threshold or \
                 Cell.damage_survival_dependency == "linear" \
                 and np.random.uniform(0, 1) < self.damage / Cell.lethal_damage_threshold:
@@ -239,8 +181,7 @@ class Cell:
 
     def reproduce(self, offspring_id: int) -> list:
         t1 = time.perf_counter()
-        beta = Cell.nutrient_accumulation_rate / self.chemostat.N / self.damage
-        self._has_reproduced = np.random.uniform(0, 1) < Cell.prob_of_division_from_lookup_table(self.age, beta)
+        self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table()
         t2 = time.perf_counter()
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
@@ -318,7 +259,6 @@ class Cell:
         """
         return self._has_died
 
-
 class Simulation:
     def __init__(self,
                  parameters: dict,
@@ -337,7 +277,7 @@ class Simulation:
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
         Cell.mutation_step = parameters["cell_parameters"]["mutation_step"]
         Cell.mutation_rate = parameters["cell_parameters"]["mutation_rate"]
-        Cell.prob_of_division_lookup = Cell.generate_initial_lookup_table()
+        Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
         if mode != "cluster":
             atexit.register(Cell.archive_lookup_table)
         run_id = round(datetime.datetime.now().timestamp() * 1000000)
@@ -694,14 +634,31 @@ class Plot:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    description = """
+    This simulator can simulate populations of cells in a chemostat (which has two parameters: volume and dilution rate;
+    cells are diluted with a poisson process with rate = population_size * dilution rate/volume. 
+    The simulation is mainly aimed at simulating the processes associated with somatic damage accumulation. So, the 
+    cells accumulate damage at some rate that can be tweaked, when they divide, the daughter cells inherit some of this 
+    damage (how equally damage is distributed among cells can also be tweaked in the asymmetry paramteter; this trait 
+    can also evolve if you intorudce non-zero mutation rate and mutation step). Damage hinders cells ability to 
+    reproduce and, actually, to live. The way it does so can also be varied.
+    """
+    parser = argparse.ArgumentParser(prog="Chemostat simulator",
+                                     description=description)
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
     parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0.1, type=float,
-                        help="Next_step_damage = current_step_damage * dar + dai")
+                        help="Next_step_damage = current_step_damage * daec + dalc")
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
-                        help="Next_step_damage = current_step_damage * dar + dai")
-    parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float)
-    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str, choices=["linear", "threshold"])
+                        help="Next_step_damage = current_step_damage * daec + dalc")
+    parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float,
+                        help="if -dsd == threshold, a cell dies if its damage is greater than -dlt;"
+                             "if -dsd == linear, a cell dies with probability 1 if its damage is equal to -dlt,"
+                             "but if it is less, it dies with probability 1/dlt at each time step")
+    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str,
+                        choices=["linear", "threshold"],
+                        help="if linear, the probability of cell death is proportional to the amount of accumulated "
+                             "damage,"
+                             "if threshold, cell only dies if its damage exceeds a threshold (tunable parameter)")
     parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
     parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
     parser.add_argument("-v", "--volume", default=1000, type=float)
@@ -714,29 +671,34 @@ if __name__ == "__main__":
     parser.add_argument("-ni", "--niterations", default=10000, type=int)
     # noinspection PyTypeChecker
     parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
-
+    parser.add_argument("--from_json", type=str, default="")
     args = parser.parse_args()
-    parameters = {
-        "chemostat_parameters": {
-            "volume": args.volume,
-            "dilution_rate": args.dilution_rate
-        },
-        "cell_parameters": {
-            "damage_accumulation_linear_component": args.damage_accumulation_linear_component,
-            "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
-            "lethal_damage_threshold": args.damage_lethal_threshold,
-            "damage_survival_dependency": args.damage_survival_dependency,
-            "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
-            "critical_nutrient_amount": args.nutrient_critical_amount,
-            "mutation_rate": args.mutation_rate,
-            "mutation_step": args.mutation_step,
-        },
-        "asymmetry": args.asymmetry
-    }
+    if args.from_json:
+        logging.info(f"Reading arguments from {args.from_json}.")
+        logging.info(f"All the arguments from the command line meaningful for the simulation contents will be ignored.")
+        with open(args.from_json, "r") as fl:
+            parameters = json.load(fl)
+    else:
+        parameters = {
+            "chemostat_parameters": {
+                "volume": args.volume,
+                "dilution_rate": args.dilution_rate
+            },
+            "cell_parameters": {
+                "damage_accumulation_linear_component": args.damage_accumulation_linear_component,
+                "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
+                "lethal_damage_threshold": args.damage_lethal_threshold,
+                "damage_survival_dependency": args.damage_survival_dependency,
+                "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
+                "critical_nutrient_amount": args.nutrient_critical_amount,
+                "mutation_rate": args.mutation_rate,
+                "mutation_step": args.mutation_step,
+            },
+            "asymmetry": args.asymmetry
+        }
     if args.mode in ["local", "interactive"]:
         from tqdm import tqdm
         import multiprocessing
-
         save_path = "../data/local_experiments/"
     else:
         Path("data/").mkdir(exist_ok=True)

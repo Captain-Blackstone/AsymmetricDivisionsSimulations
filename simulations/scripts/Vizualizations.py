@@ -22,21 +22,29 @@ class Visualizator:
         self.cell_tables = []
         self.genealogy_tables = []
 
-    def plot(self, x_feature, y_feature, show=True):
-        yy_sorted = []
-        xx = self.history_tables[0][x_feature]
-        for x in xx:
-            yy = np.array([list(self.history_tables[i].loc[self.history_tables[i][x_feature] == x,
-                                                           y_feature])[0] for i in range(len(self.history_tables))])
-            yy_sorted.append(np.array(sorted(yy)))
-        plt.fill_between(xx,
-                         [el[int(len(yy_sorted[0])*0.2)-1] for el in yy_sorted],
-                         [el[int(len(yy_sorted[0])*0.8)-1] for el in yy_sorted], color=self.color,
-                         alpha=0.1, label=self.label)
-        plt.plot(xx, [el.mean() for el in yy_sorted], color=self.color)
-
-        plt.xlabel(x_feature)
-        plt.ylabel(y_feature)
+    def plot(self, x_feature, y_feature, show=True, axis=None):
+        # yy_sorted = []
+        # for x in xx:
+        #     yy = np.array([list(self.history_tables[i].loc[self.history_tables[i][x_feature] == x,
+        #                                                    y_feature])[0] for i in range(len(self.history_tables))])
+        #     yy_sorted.append(np.array(sorted(yy)))
+        # plt.fill_between(xx,
+        #                  [el[int(len(yy_sorted[0])*0.2)-1] for el in yy_sorted],
+        #                  [el[int(len(yy_sorted[0])*0.8)-1] for el in yy_sorted], color=self.color,
+        #                  alpha=0.1, label=self.label)
+        # plt.plot(xx, [el.mean() for el in yy_sorted], color=self.color)
+        if axis:
+            for i in range(len(self.history_tables)):
+                yy = self.history_tables[i][y_feature]
+                yy = np.convolve(yy, np.ones(10000), 'valid') / 10000
+                axis.plot(yy, label=self.label, color=self.color)
+            axis.set_xlabel(x_feature)
+            axis.set_ylabel(y_feature)
+        else:
+            xx = self.history_tables[0][x_feature]
+            plt.plot(xx, self.history_tables[0][y_feature], label=self.label)
+            plt.xlabel(x_feature)
+            plt.ylabel(y_feature)
         if show:
             plt.grid()
             plt.legend()
@@ -125,6 +133,7 @@ class SQLVisualizator(Visualizator):
 
     def plot_mean_feature(self, feature, condition=True, show=True):
         self.cell_tables = [pd.read_sql_query(f"SELECT time_step, {feature} FROM cells", con) for con in self.connections]
+        print(self.cell_tables[0])
         super().plot_mean_feature(feature, condition, show)
 
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
@@ -157,11 +166,47 @@ folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 
 # visualizator = TSVVisualizator(root_path=root_path, run_id=1665763892, color='green', label="symmetry")
 # visualizator.plot("time_step", "n_cells", show=False)
-visualizator = SQLVisualizator(root_path=root_path, run_id=1667946152245327, color='blue', label="asymmetry")
+id_1 = 1669128159147082 # Mutation step = 0.05
+id_2 = 1669128218000692 # Mutation step = 0.01
+id_3 = 1669130957394782 # Mutation step = 0.05, mutation rate = 0.001
+id_4 = 1669193798094970 # daec = 0.01
+id_5 = 1669194873430621 # daec = 0, a=0
+id_6 = 1669195448345880 # daec = 0, a=1
+id_7 = 1669197993386483 # daec = 0, a=0.5
+id_8 = 1669199773539028 # weird damage accumulation rate = 100
+id_9 = 1669201571863388 # weird damage accumulation rate = 1000
+visualizator = SQLVisualizator(root_path=root_path, run_id=1670244953012986, color='blue')
 # visualizator.plot("time_step", "n_cells", show=False)
 
-# visualizator.plot("time_step", "n_cells", show=False)
-visualizator.plot_mean_feature("cell_damage", show=False)
+
+fig, axis = plt.subplots(3, 1)
+visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+
+# xx = list(range(1000))
+# yy = [1 + 1000/(x+1) for x in xx]
+# plt.plot(xx, yy)
+# plt.plot([0, 0], [0, max(yy)], color="red", linestyle="--")
+# plt.plot([0, max(xx)], [1, 1], color="red", linestyle="--")
+
+# visualizator = SQLVisualizator(root_path=root_path, run_id=id_6, color='red', label="step=0.01")
+# visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+# visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+# visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+#
+# visualizator = SQLVisualizator(root_path=root_path, run_id=id_7, color='green', label="step=0.05, rate = 0.001")
+# visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+# visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+# visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+
+
+# visualizator = SQLVisualizator(root_path=root_path, run_id=id_4, color='blue', label="daec=0.01")
+# visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+# visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+# visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+
+# visualizator.plot_mean_feature("cell_asymmetry", show=False)
 # visualizator.plot_mean_feature("cell_age", show=False)
 # visualizator_1.plot_mean_feature("cell_damage", show=False)
 # visualizator_2.plot_mean_feature("cell_damage", show=False)
@@ -182,8 +227,8 @@ visualizator.plot_mean_feature("cell_damage", show=False)
 # plt.plot([0, 10000], [500, 500], linestyle="--", color="blue", alpha=0.5)
 # visualizator.plot_mean_feature("cell_age", show=True)
 
-plt.grid()
-plt.legend()
+# plt.grid()
+# plt.legend()
 plt.show()
 
 
