@@ -1,4 +1,3 @@
-import math
 import time
 
 import pandas as pd
@@ -11,26 +10,13 @@ import json
 import argparse
 import sqlite3
 import atexit
-import matplotlib.pyplot as plt
 import logging
-import matplotlib
+
 from itertools import filterfalse
 
 TIME_STEP_DURATION = 1
-precision = 2
-logging.basicConfig(level=logging.INFO, filename="log.log")
-
-
-def non_blocking_pause(interval):
-    backend = plt.rcParams['backend']
-    if backend in matplotlib.rcsetup.interactive_bk:
-        figManager = matplotlib._pylab_helpers.Gcf.get_active()
-        if figManager is not None:
-            canvas = figManager.canvas
-            if canvas.figure.stale:
-                canvas.draw()
-            canvas.start_event_loop(interval)
-            return
+PRECISION = 3
+logging.basicConfig(level=logging.INFO)
 
 
 class Chemostat:
@@ -112,17 +98,18 @@ class Cell:
     @staticmethod
     def load_lookup_table_for_lambda_large() -> pd.DataFrame:
         """
-        Generate a small lookup table for the probability of divisin that can be further extended.
+        Generate a small lookup table for the probability of division that can be further extended.
         If a lookup table for the simulation parameters is already present in ../tables,
         load the table from file.
         :return:
         """
 
-        def generate_the_table(lower_alpha: int, higher_alpha: int, lower_x: float, higher_x: float, x_steps: int) -> pd.DataFrame:
-            logging.info(f"Generating the lookup table for various critical nutrient amounts. Please, wait. We have "
-                         f"{higher_alpha-lower_alpha} lines to process...")
+        def generate_the_table(lower_alpha: int, higher_alpha: int,
+                               lower_x: float, higher_x: float, precision=PRECISION) -> pd.DataFrame:
+            logging.info(f"Generating the probability of division lookup table for various critical nutrient amounts. "
+                         f"Please, wait. We have {higher_alpha-lower_alpha} lines to process...")
             alphas = np.arange(lower_alpha, higher_alpha+1)
-            xx = np.linspace(lower_x, higher_x, x_steps)
+            xx = np.linspace(lower_x, higher_x, (higher_x-lower_x) * (10**precision) + 1)
             table = np.zeros((len(alphas), len(xx)))
             for i, alpha in enumerate(alphas):
                 print("|", end="")
@@ -135,13 +122,11 @@ class Cell:
         if file.exists():
             lookup_table = pd.read_csv(str(file), index_col=0)
         else:
-            lookup_table = generate_the_table(lower_alpha=1, higher_alpha=50, lower_x=0, higher_x=10,
-                                              x_steps=10001)
+            lookup_table = generate_the_table(lower_alpha=1, higher_alpha=50, lower_x=0, higher_x=1)
         if Cell.critical_nutrient_amount not in lookup_table.index:
             added_lookup_table = generate_the_table(lower_alpha=max(lookup_table.index),
                                                     higher_alpha=Cell.critical_nutrient_amount,
-                                                    lower_x=0, higher_x=10,
-                                                    x_steps=10001)
+                                                    lower_x=0, higher_x=10)
             lookup_table = pd.concat([lookup_table, added_lookup_table], ignore_index=True)
         return lookup_table
 
@@ -149,9 +134,11 @@ class Cell:
     def add_columns_to_lambda_large_lookup_table(x: float) -> None:
         max_current_x = float(Cell.lambda_large_lookup.columns[-1])
         while max_current_x < x:
-            max_current_x += 0.001
+            max_current_x += 1 / (10**PRECISION)
+            max_current_x = round(max_current_x, PRECISION)
             Cell.lambda_large_lookup[str(max_current_x)] = \
                 [Cell.lambda_large(max_current_x, alpha) for alpha in Cell.lambda_large_lookup.index]
+
     @staticmethod
     def archive_lookup_table() -> None:
         """
@@ -162,8 +149,12 @@ class Cell:
         Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
 
     def prob_of_division_from_lookup_table(self) -> float:
-        mu = Cell.critical_nutrient_amount / (Cell.nutrient_accumulation_rate / self.chemostat.N ) # / self.damage
-        x = round(self.age / mu, 3)
+        rate_of_uptake = (1 - self.damage/self.lethal_damage_threshold) * \
+                         Cell.nutrient_accumulation_rate / self.chemostat.N
+        # rate_of_uptake = Cell.nutrient_accumulation_rate / self.chemostat.N
+
+        mu = Cell.critical_nutrient_amount / rate_of_uptake
+        x = round(self.age / mu, PRECISION)
         if str(x) not in Cell.lambda_large_lookup.columns:
             Cell.add_columns_to_lambda_large_lookup_table(x)
         lambda_small = Cell.lambda_large_lookup.loc[Cell.critical_nutrient_amount, str(x)] / mu
@@ -172,7 +163,7 @@ class Cell:
     def live(self) -> None:
         self._age += 1
         self._damage += \
-            (Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component) \
+            (Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component)\
             * TIME_STEP_DURATION
         if Cell.damage_survival_dependency == "threshold" and 1 < self.damage / Cell.lethal_damage_threshold or \
                 Cell.damage_survival_dependency == "linear" \
@@ -259,13 +250,16 @@ class Cell:
         """
         return self._has_died
 
+
 class Simulation:
     def __init__(self,
                  parameters: dict,
                  n_starting_cells: int,
                  save_path: str,
                  mode: str,
-                 n_threads: int, n_procs: int, write_cells_table: bool):
+                 n_threads: int, n_procs: int,
+                 run_name: str,
+                 write_cells_table: bool):
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
         Cell.damage_accumulation_linear_component = \
@@ -280,7 +274,9 @@ class Simulation:
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
         if mode != "cluster":
             atexit.register(Cell.archive_lookup_table)
-        run_id = round(datetime.datetime.now().timestamp() * 1000000)
+        run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
+        if run_name:
+            run_id += f"_{run_name}"
         (Path(save_path) / Path(str(run_id))).mkdir(exist_ok=True)
         self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
                                          chemostat_obj=Chemostat(
@@ -294,7 +290,7 @@ class Simulation:
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
         # Write parameters needed to identify simulation
-        with open(f"{save_path}/{run_id}/params.txt", "w") as fl:
+        with open(f"{save_path}/{run_id}/params.json", "w") as fl:
             json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int, n_steps: int) -> None:
@@ -318,7 +314,7 @@ class Simulation:
 
 class SimulationThread:
     def __init__(self,
-                 run_id: int,
+                 run_id: str,
                  thread_id: int,
                  chemostat_obj: Chemostat,
                  save_path: str,
@@ -420,7 +416,7 @@ class History:
     def __init__(self,
                  simulation_obj: SimulationThread,
                  save_path: str,
-                 run_id: int,
+                 run_id: str,
                  thread_id: int,
                  write_cells_table: bool):
         self.simulation_thread = simulation_obj
@@ -509,144 +505,20 @@ class History:
         return str(self.history_table)
 
 
-class Drawer:
-    """
-    Class that draws the plots in the interactive mode.
-    """
-    def __init__(self, simulation_thread: SimulationThread):
-        self.simulation_thread = simulation_thread
-        self.update_time = 100  # number of steps between figure updates
-        self.resolution = 10  # number of steps between data collection events
-        self.plot_how_many = 1000  # number of points present on the plot at each time point
-        plt.ion()
-        self.fig, self.ax = plt.subplots(3, 1)
-        plt.show(block=False)
-        atexit.register(plt.close)
-        for i, title in enumerate(["Population size", "Mean damage", "Asymmetry"]):
-            self.ax[i].set_title(title, fontsize=10)
-
-        data_dicts = [
-            {"ax_num": 0, "color": "blue", "alpha": 1,
-             "update_function": lambda: self.simulation_thread.chemostat.N},
-            {"ax_num": 1, "color": "green", "alpha": 1,
-             "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 1, "color": "green", "alpha": 0.5,
-             "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 1, "color": "green", "alpha": 0.5,
-             "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2, "color": "red", "alpha": 1,
-             "update_function":
-                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2, "color": "red", "alpha": 0.5,
-             "update_function":
-                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).max()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2, "color": "red", "alpha": 0.5,
-             "update_function":
-                 lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).min()
-                 if self.simulation_thread.chemostat.N else 0},
-        ]
-
-        self.plots = [Plot(self,
-                           self.plot_how_many,
-                           self.ax[data_dict["ax_num"]],
-                           data_dict["color"],
-                           data_dict["alpha"],
-                           data_dict["update_function"]) for data_dict in data_dicts]
-
-        plt.get_current_fig_manager().full_screen_toggle()
-
-    def draw_step(self, step_number):
-        """
-        Update all the Plots of the Drawer.
-        Update the data only each resolution time_step,
-        Update the plot only each update_time time_step.
-        :param step_number:
-        :return:
-        """
-        # Collect data each self.resolution steps
-        if step_number % self.resolution == 0:
-            for plot in self.plots:
-                plot.collect_data(step_number)
-        # Update figure each self.update_time steps
-        if step_number % self.update_time == 0:
-            for plot in self.plots:
-                plot.update_data()
-            for plot in self.plots:
-                plot.update_plot()
-            # self.fig.canvas.draw() # seems like this line is not needed. I will delete it later if nothing goes wrong.
-            non_blocking_pause(0.01)
-
-
-class Plot:
-    """
-    Helper class for a Drawer class.
-    A single Plot object can store and update data it needs to plot and plot it on a relevant axis.
-    """
-    def __init__(self,
-                 drawer: Drawer,
-                 plot_how_many: int,
-                 ax: plt.Axes,
-                 color: str,
-                 alpha: str,
-                 update_function):
-        self.drawer, self.plot_how_many = drawer, plot_how_many
-        self.ax, self.color, self.alpha = ax, color, alpha
-        self.update_function = update_function
-        self.xdata, self.ydata = [], []
-        self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
-
-    def collect_data(self, step_num: int):
-        """
-        Update xdata and ydata lists.
-        xdata is updated by appending the step_num input value into the xdata list.
-        ydata is updated by calling update_function of the object.
-        :param step_num:
-        :return:
-        """
-        self.xdata.append(step_num)
-        self.ydata.append(self.update_function())
-        self.xdata = self.xdata[-self.plot_how_many:]
-        self.ydata = self.ydata[-self.plot_how_many:]
-
-    def update_data(self):
-        """
-        put the current xdata and ydata on the plot
-        :return:
-        """
-        self.layer.set_ydata(self.ydata)
-        self.layer.set_xdata(self.xdata)
-
-    def update_plot(self):
-        """
-        rescale the axis
-        :return:
-        """
-        self.ax.relim()
-        self.ax.autoscale_view(tight=True)
-
-
 if __name__ == "__main__":
     description = """
     This simulator can simulate populations of cells in a chemostat (which has two parameters: volume and dilution rate;
     cells are diluted with a poisson process with rate = population_size * dilution rate/volume. 
     The simulation is mainly aimed at simulating the processes associated with somatic damage accumulation. So, the 
     cells accumulate damage at some rate that can be tweaked, when they divide, the daughter cells inherit some of this 
-    damage (how equally damage is distributed among cells can also be tweaked in the asymmetry paramteter; this trait 
-    can also evolve if you intorudce non-zero mutation rate and mutation step). Damage hinders cells ability to 
+    damage (how equally damage is distributed among cells can also be tweaked in the asymmetry parameter; this trait 
+    can also evolve if you introduce non-zero mutation rate and mutation step). Damage hinders cells ability to 
     reproduce and, actually, to live. The way it does so can also be varied.
     """
     parser = argparse.ArgumentParser(prog="Chemostat simulator",
                                      description=description)
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
-    parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0.1, type=float,
+    parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * daec + dalc")
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * daec + dalc")
@@ -672,6 +544,8 @@ if __name__ == "__main__":
     # noinspection PyTypeChecker
     parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
     parser.add_argument("--from_json", type=str, default="")
+    parser.add_argument("--run_name", type=str, default="")
+
     args = parser.parse_args()
     if args.from_json:
         logging.info(f"Reading arguments from {args.from_json}.")
@@ -700,6 +574,8 @@ if __name__ == "__main__":
         from tqdm import tqdm
         import multiprocessing
         save_path = "../data/local_experiments/"
+        if args.mode == "interactive":
+            from interactive_mode import Drawer
     else:
         Path("data/").mkdir(exist_ok=True)
         save_path = "./data/"
@@ -715,6 +591,7 @@ if __name__ == "__main__":
                             n_threads=args.nthreads,
                             n_procs=args.nprocs,
                             mode=args.mode,
-                            write_cells_table=write_cells_table
+                            write_cells_table=write_cells_table,
+                            run_name=args.run_name
                             )
     simulation.run(args.niterations)
