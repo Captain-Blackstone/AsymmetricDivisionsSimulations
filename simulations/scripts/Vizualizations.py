@@ -14,15 +14,19 @@ class Visualizator:
                  root_path: str,
                  run_id: int,
                  color="blue", label=""):
-        with open(root_path + f"/{run_id}/params.txt", "r") as fl:
-            self.params = json.load(fl)
+        if Path(root_path + f"/{run_id}/params.txt").exists():
+            with open(root_path + f"/{run_id}/params.txt", "r") as fl:
+                self.params = json.load(fl)
+        else:
+            with open(root_path + f"/{run_id}/params.json", "r") as fl:
+                self.params = json.load(fl)
         self.color = color
         self.label = (label + f" ({run_id})").strip()
         self.history_tables = []
         self.cell_tables = []
         self.genealogy_tables = []
 
-    def plot(self, x_feature, y_feature, show=True, axis=None):
+    def plot(self, x_feature, y_feature, show=True, axis=None, label=None):
         # yy_sorted = []
         # for x in xx:
         #     yy = np.array([list(self.history_tables[i].loc[self.history_tables[i][x_feature] == x,
@@ -33,18 +37,24 @@ class Visualizator:
         #                  [el[int(len(yy_sorted[0])*0.8)-1] for el in yy_sorted], color=self.color,
         #                  alpha=0.1, label=self.label)
         # plt.plot(xx, [el.mean() for el in yy_sorted], color=self.color)
+        if not label:
+            label = self.label
         if axis:
+            convolution_step = 400
             for i in range(len(self.history_tables)):
                 yy = self.history_tables[i][y_feature]
-                yy = np.convolve(yy, np.ones(10000), 'valid') / 10000
-                axis.plot(yy, label=self.label, color=self.color)
-            axis.set_xlabel(x_feature)
-            axis.set_ylabel(y_feature)
+                yy = list(yy)[:int(convolution_step/2)] + list(np.convolve(yy, np.ones(convolution_step)/convolution_step, 'valid'))
+                if i == len(self.history_tables)-1:
+                    axis.plot(yy, label=label, color=self.color)
+                else:
+                    axis.plot(yy, color=self.color)
+            axis.set_xlabel(" ".join(x_feature.split("_")))
+            axis.set_ylabel(" ".join(y_feature.split("_")))
         else:
             xx = self.history_tables[0][x_feature]
-            plt.plot(xx, self.history_tables[0][y_feature], label=self.label)
-            plt.xlabel(x_feature)
-            plt.ylabel(y_feature)
+            plt.plot(xx, self.history_tables[0][y_feature], label=label)
+            plt.xlabel(" ".join(x_feature.split("_")))
+            plt.ylabel(" ".join(y_feature.split("_")))
         if show:
             plt.grid()
             plt.legend()
@@ -123,7 +133,9 @@ class SQLVisualizator(Visualizator):
                  run_id: int,
                  color="blue", label=""):
         super().__init__(root_path, run_id, color, label)
-        files = [str(file) for file in Path(f"{root_path}/{run_id}").glob("*.sqlite")]
+        self.folder = f"{root_path}/{run_id}"
+        self.run_id = run_id
+        files = [str(file) for file in Path(self.folder).glob("*.sqlite")]
         self.connections = [sqlite3.connect(file) for file in files]
         for con in self.connections:
             atexit.register(con.close)
@@ -132,9 +144,46 @@ class SQLVisualizator(Visualizator):
         # self.genealogy_tables = [pd.read_sql_query("SELECT * FROM genealogy", con) for con in connections]
 
     def plot_mean_feature(self, feature, condition=True, show=True):
-        self.cell_tables = [pd.read_sql_query(f"SELECT time_step, {feature} FROM cells", con) for con in self.connections]
-        print(self.cell_tables[0])
+        self.cell_tables = [pd.read_sql_query(f"SELECT time_step, {feature} FROM cells", con)
+                            for con in self.connections]
         super().plot_mean_feature(feature, condition, show)
+
+    def make_interactive_mode_figure(self, show=False):
+        _, ax = plt.subplots(3, 1)
+        color = self.color
+        self.color = "blue"
+        self.plot("time_step", "n_cells", show=False, axis=ax[0])
+        self.color = "grey"
+        self.plot("time_step", "mean_damage", show=False, axis=ax[1])
+        self.color = "green"
+        self.plot("time_step", "mean_asymmetry", show=False, axis=ax[2], label="asymmetry")
+        self.color = "red"
+        self.plot("time_step", "mean_repair", show=False, axis=ax[2], label="repair")
+        self.color = color
+        ax[2].set_ylabel("mean asymmetry \n & repair")
+        plt.legend()
+        if show:
+            plt.show()
+
+    def make_figure_report(self):
+        figures_folder = f"{self.folder}/{self.run_id}_figures"
+        Path(figures_folder).mkdir(exist_ok=True)
+        for feature, figure_name in zip(["n_cells",
+                                         "mean_asymmetry",
+                                         "mean_damage",
+                                         "mean_repair"],
+                                        ["population_size_dynamics",
+                                         "asymmetry_dynamics",
+                                         "damage_dynamics",
+                                         "repair_dynamics"]):
+            _, ax = plt.subplots()
+            self.plot("time_step", feature, show=False, axis=ax)
+            ax.set_title(" ".join([el.capitalize() for el in figure_name.split("_")]))
+            plt.savefig(f"{figures_folder}/{figure_name}.png")
+        self.make_interactive_mode_figure()
+        plt.savefig(f"{figures_folder}/interactive_mode_figure.png")
+
+
 
 folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 
@@ -175,14 +224,35 @@ id_6 = 1669195448345880 # daec = 0, a=1
 id_7 = 1669197993386483 # daec = 0, a=0.5
 id_8 = 1669199773539028 # weird damage accumulation rate = 100
 id_9 = 1669201571863388 # weird damage accumulation rate = 1000
-visualizator = SQLVisualizator(root_path=root_path, run_id=1670244953012986, color='blue')
-# visualizator.plot("time_step", "n_cells", show=False)
+id_10 = 1671481850523483 # story about asymmetry evolving in a population on the brink of extintion!
+id_11 = 1671485681602655 # same, 10 runs, mutation rate = 0.02
+id_12 = 1671660658135236 # asymmetry is better than multiplicative repair?
+id_13 = 1671664065198253 # multiplicative repair
+id_14 = 1671665041933698 # asymmetry is better than multiplicative repair?
 
 
-fig, axis = plt.subplots(3, 1)
-visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
-visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
-visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+visualizator = SQLVisualizator(root_path=root_path, run_id=id_14, color='blue')
+visualizator.make_figure_report()
+
+# visualizator = SQLVisualizator(root_path=root_path, run_id=id_14, color='blue')
+# fig, axis = plt.subplots(3, 1)
+# visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+# visualizator.color = "green"
+# visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+# visualizator.color = "blue"
+# visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+# visualizator.plot("time_step", "mean_repair", show=False, axis=axis[1])
+#
+# visualizator = SQLVisualizator(root_path=root_path, run_id=id_13, color='red')
+# visualizator.plot("time_step", "n_cells", show=False, axis=axis[0])
+# visualizator.color = "green"
+# visualizator.plot("time_step", "mean_asymmetry", show=False, axis=axis[1])
+# visualizator.color = "red"
+# visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
+# visualizator.plot("time_step", "mean_repair", show=False, axis=axis[1])
+# plt.show()
+
+
 
 # xx = list(range(1000))
 # yy = [1 + 1000/(x+1) for x in xx]
@@ -229,7 +299,7 @@ visualizator.plot("time_step", "mean_damage", show=False, axis=axis[2])
 
 # plt.grid()
 # plt.legend()
-plt.show()
+# plt.show()
 
 
 

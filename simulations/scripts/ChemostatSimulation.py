@@ -20,13 +20,14 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Chemostat:
-    def __init__(self, volume_val: float, dilution_rate: float, n_cells=None, asymmetry=0):
+    def __init__(self, volume_val: float, dilution_rate: float, n_cells=None,
+                 asymmetry=0.0, damage_repair_intensity=0.0):
         self.V = volume_val
         self.D = dilution_rate
         self._cells = []
         self._n = 0
         if n_cells:
-            self.populate_with_cells(n_cells, asymmetry=asymmetry)
+            self.populate_with_cells(n_cells, asymmetry=asymmetry, damage_repair_intensity=damage_repair_intensity)
 
     @property
     def N(self) -> int:
@@ -36,8 +37,11 @@ class Chemostat:
     def cells(self) -> list:
         return self._cells
 
-    def populate_with_cells(self, n_cells: int, asymmetry: float) -> None:
-        self._cells += [Cell(chemostat=self, cell_id=i, asymmetry=asymmetry) for i in range(n_cells)]
+    def populate_with_cells(self, n_cells: int, asymmetry: float, damage_repair_intensity: float) -> None:
+        self._cells += [Cell(chemostat=self,
+                             cell_id=i,
+                             asymmetry=asymmetry,
+                             damage_repair_intensity=damage_repair_intensity) for i in range(n_cells)]
         self._n = len(self._cells)
 
     def dilute(self) -> None:
@@ -65,13 +69,18 @@ class Cell:
     lethal_damage_threshold = 1000
     damage_survival_dependency = "linear"
 
-    # mutation rate
-    mutation_rate = 0
-    mutation_step = 0.01
+    # mutation rates
+    asymmetry_mutation_rate = 0
+    asymmetry_mutation_step = 0.01
+    repair_mutation_rate = 0
+    repair_mutation_step = 0.01
 
     # lambda_large_lookup
     lambda_large_lookup_path = f"../tables/lambda_large_lookup_table.csv"
     lambda_large_lookup = None
+
+    # damage repair
+    damage_repair_mode = "multiplicative"
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -79,20 +88,21 @@ class Cell:
                  parent_id=None,
                  asymmetry=0.0,
                  age=0,
-                 damage=0.0):
+                 damage=0.0, damage_repair_intensity=0.0):
         self.chemostat = chemostat
         self._id = cell_id
         self._parent_id = parent_id
         self._age = age
         self._damage = damage
-        self._asymmetry = asymmetry
+        self.asymmetry = asymmetry
         self._has_reproduced = False
         self._has_died = ""
+        self.damage_repair_intensity = damage_repair_intensity
 
     @staticmethod
     def lambda_large(x: float, alpha: float, beta=1.0) -> float:
         mu = alpha / beta  # expected value of the gamma-distribution
-        age = int((alpha / beta) * x)  # cell age = expected age * (fraction of current age from the expected age)
+        age = mu * x  # cell age = expected age * (fraction of current age from the expected age)
         return mu * gamma.pdf(age, a=alpha, scale=1 / beta) / (1 - gamma.cdf(age, a=alpha, scale=1 / beta))
 
     @staticmethod
@@ -151,8 +161,10 @@ class Cell:
     def prob_of_division_from_lookup_table(self) -> float:
         rate_of_uptake = (1 - self.damage/self.lethal_damage_threshold) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
-        # rate_of_uptake = Cell.nutrient_accumulation_rate / self.chemostat.N
-
+        if Cell.damage_repair_mode == "multiplicative":
+            rate_of_uptake *= (1 - self._damage_repair_intensity)
+        elif Cell.damage_repair_mode == "additive":
+            rate_of_uptake *= (1 - self._damage_repair_intensity/self.lethal_damage_threshold)
         mu = Cell.critical_nutrient_amount / rate_of_uptake
         x = round(self.age / mu, PRECISION)
         if str(x) not in Cell.lambda_large_lookup.columns:
@@ -162,39 +174,46 @@ class Cell:
 
     def live(self) -> None:
         self._age += 1
-        self._damage += \
-            (Cell.damage_accumulation_exponential_component * self._damage + Cell.damage_accumulation_linear_component)\
+        self.damage += (Cell.damage_accumulation_exponential_component * self._damage
+                        + Cell.damage_accumulation_linear_component) \
             * TIME_STEP_DURATION
+        if Cell.damage_repair_mode == "multiplicative":
+            self.damage *= 1 - self._damage_repair_intensity
+        elif Cell.damage_repair_mode == "additive":
+            self.damage -= self.damage_repair_intensity * TIME_STEP_DURATION
         if Cell.damage_survival_dependency == "threshold" and 1 < self.damage / Cell.lethal_damage_threshold or \
                 Cell.damage_survival_dependency == "linear" \
                 and np.random.uniform(0, 1) < self.damage / Cell.lethal_damage_threshold:
             self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
-        t1 = time.perf_counter()
         self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table()
-        t2 = time.perf_counter()
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
-            if np.random.uniform() < self.mutation_rate:
-                offspring_asymmetry += np.random.choice([self.mutation_step, -self.mutation_step])
-                offspring_asymmetry = min(max(offspring_asymmetry, 0), 1)
-            t3 = time.perf_counter()
+            if np.random.uniform() < self.asymmetry_mutation_rate:
+                offspring_asymmetry += np.random.choice([self.asymmetry_mutation_step, -self.asymmetry_mutation_step])
+            offspring_damage_repair_intensity = self.damage_repair_intensity
+            if np.random.uniform() < self.repair_mutation_rate:
+                offspring_damage_repair_intensity += np.random.choice([self.repair_mutation_step,
+                                                                       -self.repair_mutation_step])
             res = [Cell(chemostat=self.chemostat,
                         cell_id=offspring_id,
                         parent_id=self.id,
                         asymmetry=offspring_asymmetry,
-                        damage=self.damage * (1 + self.asymmetry) / 2),
+                        damage=self.damage * (1 + self.asymmetry) / 2,
+                        damage_repair_intensity=offspring_damage_repair_intensity
+                        ),
                    Cell(chemostat=self.chemostat,
                         cell_id=offspring_id + 1,
                         parent_id=self.id,
                         asymmetry=offspring_asymmetry,
-                        damage=self.damage * (1 - self.asymmetry) / 2)]
-            t4 = time.perf_counter()
+                        damage=self.damage * (1 - self.asymmetry) / 2,
+                        damage_repair_intensity=offspring_damage_repair_intensity
+                        ),
+                   ]
             return res
         else:
             res = [self]
-            t3 = time.perf_counter()
             return res
 
     def die(self, cause: str) -> None:
@@ -237,6 +256,10 @@ class Cell:
         return self._damage
 
     @property
+    def damage_repair_intensity(self) -> float:
+        return self._damage_repair_intensity
+
+    @property
     def has_reproduced(self) -> bool:
         """
         :return: if cell has reproduced at the current time step
@@ -250,6 +273,17 @@ class Cell:
         """
         return self._has_died
 
+    @damage.setter
+    def damage(self, damage):
+        self._damage = max(damage, 0)
+
+    @asymmetry.setter
+    def asymmetry(self, asymmetry):
+        self._asymmetry = min(max(asymmetry, 0), 1)
+
+    @damage_repair_intensity.setter
+    def damage_repair_intensity(self, damage_repair_intensity):
+        self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
 
 class Simulation:
     def __init__(self,
@@ -260,6 +294,7 @@ class Simulation:
                  n_threads: int, n_procs: int,
                  run_name: str,
                  write_cells_table: bool):
+        Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
         Cell.damage_accumulation_linear_component = \
@@ -269,8 +304,11 @@ class Simulation:
         Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
-        Cell.mutation_step = parameters["cell_parameters"]["mutation_step"]
-        Cell.mutation_rate = parameters["cell_parameters"]["mutation_rate"]
+        Cell.asymmetry_mutation_step = parameters["cell_parameters"]["asymmetry_mutation_step"]
+        Cell.asymmetry_mutation_rate = parameters["cell_parameters"]["asymmetry_mutation_rate"]
+        Cell.repair_mutation_step = parameters["cell_parameters"]["repair_mutation_step"]
+        Cell.repair_mutation_rate = parameters["cell_parameters"]["repair_mutation_rate"]
+
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
         if mode != "cluster":
             atexit.register(Cell.archive_lookup_table)
@@ -283,7 +321,9 @@ class Simulation:
                                              volume_val=parameters["chemostat_parameters"]["volume"],
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
                                              n_cells=n_starting_cells,
-                                             asymmetry=parameters["asymmetry"]),
+                                             asymmetry=parameters["asymmetry"],
+                                             damage_repair_intensity=parameters["damage_repair_intensity"]
+                                         ),
                                          save_path=save_path,
                                          mode=mode,
                                          write_cells_table=write_cells_table) for i in range(n_threads)]
@@ -381,7 +421,8 @@ class History:
                         "time_step": "INTEGER",
                         "n_cells": "INTEGER",
                         "mean_asymmetry": "REAL",
-                        "mean_damage": "REAL"
+                        "mean_damage": "REAL",
+                        "mean_repair": "REAL",
                     },
                 "additional": ["PRIMARY KEY(time_step)"]
             },
@@ -395,6 +436,7 @@ class History:
                         "cell_age": "INTEGER",
                         "cell_damage": "REAL",
                         "cell_asymmetry": "REAL",
+                        "cell_damage_repair_intensity": "REAL",
                         "has_divided": "BOOLEAN",
                         "has_died": "TEXT"
                     },
@@ -457,6 +499,8 @@ class History:
              "n_cells": [self.simulation_thread.chemostat.N],
              "mean_asymmetry": [np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()],
              "mean_damage": [np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()],
+             "mean_repair": [np.array([cell.damage_repair_intensity
+                                       for cell in self.simulation_thread.chemostat.cells]).mean()],
              }
         )
 
@@ -471,6 +515,7 @@ class History:
                  "cell_age": [cell.age for cell in cells],
                  "cell_damage": [cell.damage for cell in cells],
                  "cell_asymmetry": [cell.asymmetry for cell in cells],
+                 "cell_damage_repair_intensity": [cell.damage_repair_intensity for cell in cells],
                  "has_divided": [bool(cell.has_reproduced) for cell in cells],
                  "has_died": [cell.has_died for cell in cells]
                  })
@@ -518,6 +563,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Chemostat simulator",
                                      description=description)
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
+    parser.add_argument("-dri", "--damage_repair_intensity", default=0, type=float)
+    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str, choices=["multiplicative", "additive"])
+
     parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * daec + dalc")
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
@@ -535,8 +583,11 @@ if __name__ == "__main__":
     parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
     parser.add_argument("-v", "--volume", default=1000, type=float)
     parser.add_argument("-d", "--dilution_rate", default=1, type=float)
-    parser.add_argument("-mr", "--mutation_rate", default=0, type=float)
-    parser.add_argument("-ms", "--mutation_step", default=0, type=float)
+    parser.add_argument("-amr", "--asymmetry_mutation_rate", default=0, type=float)
+    parser.add_argument("-ams", "--asymmetry_mutation_step", default=0, type=float)
+    parser.add_argument("-rmr", "--repair_mutation_rate", default=0, type=float)
+    parser.add_argument("-rms", "--repair_mutation_step", default=0, type=float)
+
     parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
@@ -559,16 +610,21 @@ if __name__ == "__main__":
                 "dilution_rate": args.dilution_rate
             },
             "cell_parameters": {
+                "damage_repair_mode": args.repair_mode,
                 "damage_accumulation_linear_component": args.damage_accumulation_linear_component,
                 "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
                 "lethal_damage_threshold": args.damage_lethal_threshold,
                 "damage_survival_dependency": args.damage_survival_dependency,
                 "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
                 "critical_nutrient_amount": args.nutrient_critical_amount,
-                "mutation_rate": args.mutation_rate,
-                "mutation_step": args.mutation_step,
+                "asymmetry_mutation_rate": args.asymmetry_mutation_rate,
+                "asymmetry_mutation_step": args.asymmetry_mutation_step,
+                "repair_mutation_rate": args.repair_mutation_rate,
+                "repair_mutation_step": args.repair_mutation_step,
+
             },
-            "asymmetry": args.asymmetry
+            "asymmetry": args.asymmetry,
+            "damage_repair_intensity": args.damage_repair_intensity
         }
     if args.mode in ["local", "interactive"]:
         from tqdm import tqdm

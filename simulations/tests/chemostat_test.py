@@ -15,6 +15,7 @@ def test_carrying_capacity(volume, dilution_rate, carrying_capacity):
     stable_popsize = last150[last150 > 0].mean()
     assert carrying_capacity*0.9 < stable_popsize < carrying_capacity*1.1
 
+
 @pytest.mark.parametrize("critical_nutrient_amount, nutrient_accumulation_rate, chemostat_N", [[cna, nar, cN] for cna in range(1, 200, 5)
                                                                       for nar in np.linspace(1, 10, 5)
                                                                       for cN in range(1, 200)])
