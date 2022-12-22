@@ -1,4 +1,4 @@
-import time
+import random
 
 import pandas as pd
 import datetime
@@ -283,7 +283,11 @@ class Cell:
 
     @damage_repair_intensity.setter
     def damage_repair_intensity(self, damage_repair_intensity):
-        self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
+        if Cell.damage_repair_mode == "multiplicative":
+            self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
+        elif Cell.damage_repair_mode == "additive":
+            self._damage_repair_intensity = min(Cell.lethal_damage_threshold, max(damage_repair_intensity, 0))
+
 
 class Simulation:
     def __init__(self,
@@ -314,9 +318,10 @@ class Simulation:
             atexit.register(Cell.archive_lookup_table)
         run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
         if run_name:
-            run_id += f"_{run_name}"
-        (Path(save_path) / Path(str(run_id))).mkdir(exist_ok=True)
-        self.threads = [SimulationThread(run_id=run_id, thread_id=i + 1,
+            run_name = "_" + run_name
+        (Path(save_path) / Path(f"run_id{run_name}")).mkdir(exist_ok=True)
+        self.threads = [SimulationThread(run_id=run_id, run_name=run_name,
+                                         thread_id=i + 1,
                                          chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
@@ -324,6 +329,7 @@ class Simulation:
                                              asymmetry=parameters["asymmetry"],
                                              damage_repair_intensity=parameters["damage_repair_intensity"]
                                          ),
+                                         changing_environent_prob=parameters["changing_environment_probability"],
                                          save_path=save_path,
                                          mode=mode,
                                          write_cells_table=write_cells_table) for i in range(n_threads)]
@@ -355,16 +361,25 @@ class Simulation:
 class SimulationThread:
     def __init__(self,
                  run_id: str,
+                 run_name: str,
                  thread_id: int,
                  chemostat_obj: Chemostat,
+                 changing_environent_prob: float,
                  save_path: str,
                  mode: str,
                  write_cells_table: bool):
         self.mode = mode
         self.chemostat = chemostat_obj
+        self.changing_environment_prob = changing_environent_prob
+        self.changing_environment_val = {
+            True: Cell.damage_accumulation_exponential_component,
+            False: 0
+        }
+        self.current_environment = True
         self.history = History(self,
                                save_path=save_path,
                                run_id=run_id,
+                               run_name=run_name,
                                thread_id=thread_id,
                                write_cells_table=write_cells_table)
         if self.mode == "interactive":
@@ -372,29 +387,25 @@ class SimulationThread:
 
     def _step(self, step_number: int) -> None:
         # Cells are diluted
-        t1 = time.perf_counter()
         self.chemostat.dilute()
-        t2 = time.perf_counter()
-        logging.debug(f"{self.chemostat.N} {t2 - t1: 0.5f}: dilution")
+
         # Alive cells reproduce
         new_cells = []
         for cell in filterfalse(lambda cell_obj: cell_obj.has_died, self.chemostat.cells):
             offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
             new_cells += cell.reproduce(offspring_id)
-        t3 = time.perf_counter()
-        logging.debug(f"{self.chemostat.N} {t3 - t2: 0.5f}: reproduction")
+
         # History is recorded
         self.history.record(step_number)
         # Move to the next time step
         self.chemostat.cells = new_cells
-        t4 = time.perf_counter()
+
         # Time passes
         for cell in self.chemostat.cells:
             cell.live()
-        t5 = time.perf_counter()
-        logging.debug(f"{self.chemostat.N} {t4 - t3: 0.5f}: history recording")
-        logging.debug(f"{self.chemostat.N} {t5 - t4: 0.5f}: live")
-        logging.debug("----")
+
+        # Switch environment
+        self._change_environment()
 
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
@@ -411,6 +422,10 @@ class SimulationThread:
         self.history.save()
         self.history.SQLdb.close()
 
+    def _change_environment(self) -> None:
+        if self.changing_environment_prob and random.uniform(0, 1) < self.changing_environment_prob:  # speed up
+            self.current_environment = not self.current_environment
+            Cell.damage_accumulation_exponential_component = self.changing_environment_val[self.current_environment]
 
 class History:
     tables = {
@@ -459,11 +474,12 @@ class History:
                  simulation_obj: SimulationThread,
                  save_path: str,
                  run_id: str,
+                 rub_name: str,
                  thread_id: int,
                  write_cells_table: bool):
         self.simulation_thread = simulation_obj
         self.run_id = run_id
-        self.save_path = f"{save_path}/{self.run_id}"
+        self.save_path = f"{save_path}/{self.run_id}{rub_name}"
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
@@ -562,10 +578,15 @@ if __name__ == "__main__":
     """
     parser = argparse.ArgumentParser(prog="Chemostat simulator",
                                      description=description)
-    parser.add_argument("-a", "--asymmetry", default=0, type=float)
-    parser.add_argument("-dri", "--damage_repair_intensity", default=0, type=float)
-    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str, choices=["multiplicative", "additive"])
+    # Chemostat
+    parser.add_argument("-v", "--volume", default=1000, type=float)
+    parser.add_argument("-d", "--dilution_rate", default=1, type=float)
 
+    # Basic cell growth
+    parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
+    parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
+
+    # Damage
     parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * daec + dalc")
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
@@ -579,19 +600,26 @@ if __name__ == "__main__":
                         help="if linear, the probability of cell death is proportional to the amount of accumulated "
                              "damage,"
                              "if threshold, cell only dies if its damage exceeds a threshold (tunable parameter)")
-    parser.add_argument("-nca", "--nutrient_critical_amount", default=10, type=float)
-    parser.add_argument("-nar", "--nutrient_accumulation_rate", default=1, type=float)
-    parser.add_argument("-v", "--volume", default=1000, type=float)
-    parser.add_argument("-d", "--dilution_rate", default=1, type=float)
+
+    # Asymmetry
+    parser.add_argument("-a", "--asymmetry", default=0, type=float)
     parser.add_argument("-amr", "--asymmetry_mutation_rate", default=0, type=float)
     parser.add_argument("-ams", "--asymmetry_mutation_step", default=0, type=float)
+
+    # Repair
+    parser.add_argument("-dri", "--damage_repair_intensity", default=0, type=float)
+    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str, choices=["multiplicative", "additive"])
     parser.add_argument("-rmr", "--repair_mutation_rate", default=0, type=float)
     parser.add_argument("-rms", "--repair_mutation_step", default=0, type=float)
 
-    parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
+    # Changing environment
+    parser.add_argument("-chep", "--changing_environment_probability", default=0, type=float)
+
+    # Technical
+    parser.add_argument("-ni", "--niterations", default=10000, type=int)
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
-    parser.add_argument("-ni", "--niterations", default=10000, type=int)
+    parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
     # noinspection PyTypeChecker
     parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
     parser.add_argument("--from_json", type=str, default="")
@@ -624,7 +652,8 @@ if __name__ == "__main__":
 
             },
             "asymmetry": args.asymmetry,
-            "damage_repair_intensity": args.damage_repair_intensity
+            "damage_repair_intensity": args.damage_repair_intensity,
+            "changing_environment_probability": args.changing_environment_probability
         }
     if args.mode in ["local", "interactive"]:
         from tqdm import tqdm

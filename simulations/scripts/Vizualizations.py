@@ -12,7 +12,7 @@ root_path = "/home/blackstone/PycharmProjects/NIH/AsymmetricDivisions/simulation
 class Visualizator:
     def __init__(self,
                  root_path: str,
-                 run_id: int,
+                 run_id,
                  color="blue", label=""):
         if Path(root_path + f"/{run_id}/params.txt").exists():
             with open(root_path + f"/{run_id}/params.txt", "r") as fl:
@@ -130,11 +130,11 @@ class TSVVisualizator(Visualizator):
 class SQLVisualizator(Visualizator):
     def __init__(self,
                  root_path: str,
-                 run_id: int,
+                 run_id,
                  color="blue", label=""):
         super().__init__(root_path, run_id, color, label)
         self.folder = f"{root_path}/{run_id}"
-        self.run_id = run_id
+        self.run_id = str(run_id).split("_")[0]
         files = [str(file) for file in Path(self.folder).glob("*.sqlite")]
         self.connections = [sqlite3.connect(file) for file in files]
         for con in self.connections:
@@ -185,7 +185,7 @@ class SQLVisualizator(Visualizator):
 
 
 
-folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
+# folders = [int(str(p).split("/")[-1]) for p in Path(root_path).glob("*")]
 
 # visualizator_1 = SQLVisualizator(root_path=root_path,
 #                                run_id=1667692592700762,
@@ -229,10 +229,11 @@ id_11 = 1671485681602655 # same, 10 runs, mutation rate = 0.02
 id_12 = 1671660658135236 # asymmetry is better than multiplicative repair?
 id_13 = 1671664065198253 # multiplicative repair
 id_14 = 1671665041933698 # asymmetry is better than multiplicative repair?
+id_15 = 1671726415351954 # additive repair
 
-
-visualizator = SQLVisualizator(root_path=root_path, run_id=id_14, color='blue')
+visualizator = SQLVisualizator(root_path=root_path, run_id=1671745458968505, color='blue')
 visualizator.make_figure_report()
+# visualizator.make_interactive_mode_figure(show=True)
 
 # visualizator = SQLVisualizator(root_path=root_path, run_id=id_14, color='blue')
 # fig, axis = plt.subplots(3, 1)
