@@ -319,7 +319,7 @@ class Simulation:
         run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
         if run_name:
             run_name = "_" + run_name
-        (Path(save_path) / Path(f"run_id{run_name}")).mkdir(exist_ok=True)
+        (Path(save_path) / Path(f"{run_id}{run_name}")).mkdir(exist_ok=True)
         self.threads = [SimulationThread(run_id=run_id, run_name=run_name,
                                          thread_id=i + 1,
                                          chemostat_obj=Chemostat(
@@ -474,14 +474,15 @@ class History:
                  simulation_obj: SimulationThread,
                  save_path: str,
                  run_id: str,
-                 rub_name: str,
+                 run_name: str,
                  thread_id: int,
                  write_cells_table: bool):
         self.simulation_thread = simulation_obj
         self.run_id = run_id
-        self.save_path = f"{save_path}/{self.run_id}{rub_name}"
+        self.save_path = f"{save_path}/{self.run_id}{run_name}"
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
+        print(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         # If the program exist with error, the connection will still be closed
         atexit.register(self.SQLdb.close)
@@ -658,12 +659,12 @@ if __name__ == "__main__":
     if args.mode in ["local", "interactive"]:
         from tqdm import tqdm
         import multiprocessing
-        save_path = "../data/local_experiments/"
+        save_path = "../data/local_experiments"
         if args.mode == "interactive":
             from interactive_mode import Drawer
     else:
         Path("data/").mkdir(exist_ok=True)
-        save_path = "./data/"
+        save_path = "./data"
 
     if args.cells_table:
         write_cells_table = True
