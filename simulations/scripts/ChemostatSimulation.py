@@ -16,7 +16,7 @@ from itertools import filterfalse
 
 TIME_STEP_DURATION = 1
 PRECISION = 3
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class Chemostat:
@@ -300,7 +300,8 @@ class Simulation:
                  mode: str,
                  n_threads: int, n_procs: int,
                  run_name: str,
-                 write_cells_table: bool):
+                 write_cells_table: bool,
+                 add_runs: str):
         Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
@@ -320,7 +321,12 @@ class Simulation:
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
         if mode != "cluster":
             atexit.register(Cell.archive_lookup_table)
-        run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
+        if add_runs:
+            run_id = add_runs.rstrip("/").split("/")[-1].split("_")[0]
+            max_existing_thread = max([int(file.stem.split("_")[-1]) for file in Path(add_runs).glob("*.sqlite")])
+        else:
+            run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
+            max_existing_thread = 0
         if run_name:
             run_name = "_" + run_name
         (Path(save_path) / Path(f"{run_id}{run_name}")).mkdir(exist_ok=True)
@@ -336,11 +342,12 @@ class Simulation:
                                          changing_environent_prob=parameters["changing_environment_probability"],
                                          save_path=save_path,
                                          mode=mode,
-                                         write_cells_table=write_cells_table) for i in range(n_threads)]
+                                         write_cells_table=write_cells_table) for i in
+                        range(max_existing_thread, max_existing_thread + n_threads)]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
         # Write parameters needed to identify simulation
-        with open(f"{save_path}/{run_id}/params.json", "w") as fl:
+        with open(f"{save_path}/{run_id}{run_name}/params.json", "w") as fl:
             json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int, n_steps: int) -> None:
@@ -439,6 +446,7 @@ class SimulationThread:
             self.current_environment = not self.current_environment
             Cell.damage_accumulation_exponential_component = self.changing_environment_val[self.current_environment]
 
+
 class History:
     tables = {
         "history":
@@ -494,6 +502,7 @@ class History:
         self.run_id = run_id
         self.save_path = f"{save_path}/{self.run_id}{run_name}"
         self.thread_id = thread_id
+        self.write_cells_table = write_cells_table
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         # If the program exist with error, the connection will still be closed
@@ -502,16 +511,16 @@ class History:
         self.reset()
         # This is needed not to record the same cell twice in the genealogy table
         self.max_cell_in_genealogy = -1
-        self.write_cells_table = write_cells_table
+
 
     def create_tables(self) -> None:
         for table in self.tables:
-            if table == "cells" and not write_cells_table:
+            if table == "cells" and not self.write_cells_table:
                 continue
             columns = [" ".join([key, val]) for key, val in self.tables[table]["columns"].items()]
             content = ', '.join(columns)
             for element in self.tables[table]["additional"]:
-                if "REFERENCES cells" in element and not write_cells_table:
+                if "REFERENCES cells" in element and not self.write_cells_table:
                     continue
                 content += ", " + element
             query = f"CREATE TABLE {table} ({content});"
@@ -622,7 +631,8 @@ if __name__ == "__main__":
 
     # Repair
     parser.add_argument("-dri", "--damage_repair_intensity", default=0, type=float)
-    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str, choices=["multiplicative", "additive"])
+    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str,
+                        choices=["multiplicative", "additive"])
     parser.add_argument("-rmr", "--repair_mutation_rate", default=0, type=float)
     parser.add_argument("-rms", "--repair_mutation_step", default=0, type=float)
     parser.add_argument("-rcc", "--repair_cost_coefficient", default=1, type=float)
@@ -639,8 +649,28 @@ if __name__ == "__main__":
     parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--from_json", type=str, default="")
     parser.add_argument("--run_name", type=str, default="")
+    parser.add_argument("--add_runs", type=str, default="")
 
     args = parser.parse_args()
+
+    if args.mode in ["local", "interactive"]:
+        from tqdm import tqdm
+        import multiprocessing
+        save_path = "../data/local_experiments"
+        if args.mode == "interactive":
+            from interactive_mode import Drawer
+    else:
+        Path("data/").mkdir(exist_ok=True)
+        save_path = "./data"
+
+    if args.add_runs:
+        args.add_runs = f"{save_path}/{args.add_runs}"
+        if not Path(args.add_runs).exists():
+            raise FileNotFoundError(f"{args.add_runs} folder does not exist. "
+                                    f"Please, supply --add_runs option with an existing folder.")
+        args.from_json = f"{args.add_runs.rstrip('/')}/params.json"
+        args.run_name = "_".join(Path(args.add_runs).stem.split("_")[1:])
+
     if args.from_json:
         logging.info(f"Reading arguments from {args.from_json}.")
         logging.info(f"All the arguments from the command line meaningful for the simulation contents will be ignored.")
@@ -670,20 +700,6 @@ if __name__ == "__main__":
             "damage_repair_intensity": args.damage_repair_intensity,
             "changing_environment_probability": args.changing_environment_probability
         }
-    if args.mode in ["local", "interactive"]:
-        from tqdm import tqdm
-        import multiprocessing
-        save_path = "../data/local_experiments"
-        if args.mode == "interactive":
-            from interactive_mode import Drawer
-    else:
-        Path("data/").mkdir(exist_ok=True)
-        save_path = "./data"
-
-    if args.cells_table:
-        write_cells_table = True
-    else:
-        write_cells_table = False
 
     simulation = Simulation(parameters=parameters,
                             n_starting_cells=1,
@@ -691,7 +707,8 @@ if __name__ == "__main__":
                             n_threads=args.nthreads,
                             n_procs=args.nprocs,
                             mode=args.mode,
-                            write_cells_table=write_cells_table,
-                            run_name=args.run_name
+                            write_cells_table=args.cells_table,
+                            run_name=args.run_name,
+                            add_runs=args.add_runs
                             )
     simulation.run(args.niterations)
