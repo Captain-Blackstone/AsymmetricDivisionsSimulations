@@ -81,6 +81,7 @@ class Cell:
 
     # damage repair
     damage_repair_mode = "multiplicative"
+    repair_cost_coefficient = 1
 
     def __init__(self,
                  chemostat: Chemostat,
@@ -162,9 +163,11 @@ class Cell:
         rate_of_uptake = (1 - self.damage/self.lethal_damage_threshold) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
         if Cell.damage_repair_mode == "multiplicative":
-            rate_of_uptake *= (1 - self._damage_repair_intensity)
+            rate_of_uptake *= (1 - self._damage_repair_intensity**(1/Cell.repair_cost_coefficient))
         elif Cell.damage_repair_mode == "additive":
-            rate_of_uptake *= (1 - self._damage_repair_intensity/self.lethal_damage_threshold)
+            rate_of_uptake *= (1 -
+                               (self._damage_repair_intensity /
+                                self.lethal_damage_threshold)**(1/Cell.repair_cost_coefficient))
         mu = Cell.critical_nutrient_amount / rate_of_uptake
         x = round(self.age / mu, PRECISION)
         if str(x) not in Cell.lambda_large_lookup.columns:
@@ -312,6 +315,7 @@ class Simulation:
         Cell.asymmetry_mutation_rate = parameters["cell_parameters"]["asymmetry_mutation_rate"]
         Cell.repair_mutation_step = parameters["cell_parameters"]["repair_mutation_step"]
         Cell.repair_mutation_rate = parameters["cell_parameters"]["repair_mutation_rate"]
+        Cell.repair_cost_coefficient = parameters["cell_parameters"]["repair_cost_coefficient"]
 
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
         if mode != "cluster":
@@ -386,6 +390,8 @@ class SimulationThread:
             self.drawer = Drawer(self)
 
     def _step(self, step_number: int) -> None:
+        # If there are no cells, don't do anything
+
         # Cells are diluted
         self.chemostat.dilute()
 
@@ -412,13 +418,19 @@ class SimulationThread:
         if self.mode == "local":
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
+                if self.chemostat.N == 0:
+                    break
         elif self.mode == "interactive":
             for step_number in tqdm(range(n_steps)):
                 self._step(step_number)
                 self.drawer.draw_step(step_number)
+                if self.chemostat.N == 0:
+                    break
         elif self.mode == "cluster":
             for step_number in range(n_steps):
                 self._step(step_number)
+                if self.chemostat.N == 0:
+                    break
         self.history.save()
         self.history.SQLdb.close()
 
@@ -438,6 +450,7 @@ class History:
                         "mean_asymmetry": "REAL",
                         "mean_damage": "REAL",
                         "mean_repair": "REAL",
+                        "environment": "BOOLEAN"
                     },
                 "additional": ["PRIMARY KEY(time_step)"]
             },
@@ -482,7 +495,6 @@ class History:
         self.save_path = f"{save_path}/{self.run_id}{run_name}"
         self.thread_id = thread_id
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
-        print(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         # If the program exist with error, the connection will still be closed
         atexit.register(self.SQLdb.close)
@@ -518,6 +530,7 @@ class History:
              "mean_damage": [np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()],
              "mean_repair": [np.array([cell.damage_repair_intensity
                                        for cell in self.simulation_thread.chemostat.cells]).mean()],
+             "environment": self.simulation_thread.current_environment
              }
         )
 
@@ -612,6 +625,7 @@ if __name__ == "__main__":
     parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str, choices=["multiplicative", "additive"])
     parser.add_argument("-rmr", "--repair_mutation_rate", default=0, type=float)
     parser.add_argument("-rms", "--repair_mutation_step", default=0, type=float)
+    parser.add_argument("-rcc", "--repair_cost_coefficient", default=1, type=float)
 
     # Changing environment
     parser.add_argument("-chep", "--changing_environment_probability", default=0, type=float)
@@ -622,7 +636,7 @@ if __name__ == "__main__":
     parser.add_argument("-np", "--nprocs", default=1, type=int)
     parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
     # noinspection PyTypeChecker
-    parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--from_json", type=str, default="")
     parser.add_argument("--run_name", type=str, default="")
 
@@ -650,7 +664,7 @@ if __name__ == "__main__":
                 "asymmetry_mutation_step": args.asymmetry_mutation_step,
                 "repair_mutation_rate": args.repair_mutation_rate,
                 "repair_mutation_step": args.repair_mutation_step,
-
+                "repair_cost_coefficient": args.repair_cost_coefficient
             },
             "asymmetry": args.asymmetry,
             "damage_repair_intensity": args.damage_repair_intensity,
