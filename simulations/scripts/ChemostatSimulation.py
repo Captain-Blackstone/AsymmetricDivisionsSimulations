@@ -67,7 +67,6 @@ class Cell:
     # Damage accumulation
     damage_accumulation_exponential_component = 0
     damage_accumulation_linear_component = 0.1
-    lethal_damage_threshold = 1000
     damage_survival_dependency = 1
     damage_reproduction_dependency = False
 
@@ -163,15 +162,13 @@ class Cell:
         Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
 
     def prob_of_division_from_lookup_table(self) -> float:
-        rate_of_uptake = ((1 - self.damage/self.lethal_damage_threshold) ** Cell.damage_reproduction_dependency) * \
+        rate_of_uptake = ((1 - self.damage) ** Cell.damage_reproduction_dependency) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
         # rate_of_uptake = Cell.nutrient_accumulation_rate / self.chemostat.N
         if Cell.damage_repair_mode == "multiplicative":
             rate_of_uptake *= (1 - self._damage_repair_intensity**(1/Cell.repair_cost_coefficient))
         elif Cell.damage_repair_mode == "additive":
-            rate_of_uptake *= (1 -
-                               (self._damage_repair_intensity /
-                                self.lethal_damage_threshold)**(1/Cell.repair_cost_coefficient))
+            rate_of_uptake *= (1 - self._damage_repair_intensity)**(1/Cell.repair_cost_coefficient)
         if rate_of_uptake <= 0:
             return 0
         mu = Cell.critical_nutrient_amount / rate_of_uptake
@@ -190,7 +187,7 @@ class Cell:
             self.damage *= 1 - self._damage_repair_intensity
         elif Cell.damage_repair_mode == "additive":
             self.damage -= self.damage_repair_intensity * TIME_STEP_DURATION
-        if np.random.uniform(0, 1) < (self.damage / Cell.lethal_damage_threshold)**Cell.damage_survival_dependency:
+        if np.random.uniform(0, 1) < self.damage**Cell.damage_survival_dependency:
             self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
@@ -302,10 +299,7 @@ class Cell:
 
     @damage_repair_intensity.setter
     def damage_repair_intensity(self, damage_repair_intensity):
-        if Cell.damage_repair_mode == "multiplicative":
-            self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
-        elif Cell.damage_repair_mode == "additive":
-            self._damage_repair_intensity = min(Cell.lethal_damage_threshold, max(damage_repair_intensity, 0))
+        self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
 
 
 class Simulation:
@@ -326,7 +320,6 @@ class Simulation:
         Cell.damage_survival_dependency = parameters["cell_parameters"]["damage_survival_dependency"]
         Cell.damage_reproduction_dependency = parameters["cell_parameters"]["damage_reproduction_dependency"]
 
-        Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
         Cell.critical_nutrient_amount = parameters["cell_parameters"]["critical_nutrient_amount"]
         Cell.asymmetry_mutation_step = parameters["cell_parameters"]["asymmetry_mutation_step"]
@@ -444,22 +437,18 @@ class SimulationThread:
 
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
-        if self.mode == "local":
-            for step_number in tqdm(range(n_steps)):
-                self._step(step_number)
-                if self.chemostat.N == 0:
-                    break
-        elif self.mode == "interactive":
-            for step_number in tqdm(range(n_steps)):
-                self._step(step_number)
+        if self.mode in ["local", "interactive"]:
+            iterator = tqdm(range(n_steps))
+        else:
+            iterator = range(n_steps)
+
+        for step_number in iterator:
+            self._step(step_number)
+            if self.mode == "interactive":
                 self.drawer.draw_step(step_number)
-                if self.chemostat.N == 0:
-                    break
-        elif self.mode == "cluster":
-            for step_number in range(n_steps):
-                self._step(step_number)
-                if self.chemostat.N == 0:
-                    break
+            if self.chemostat.N == 0:
+                logging.info("The population died out.")
+                break
         if self.record_history:
             self.history.save()
             self.history.SQLdb.close()
@@ -647,16 +636,16 @@ if __name__ == "__main__":
 
     # Damage
     parser.add_argument("-dalc", "--damage_accumulation_linear_component", default=0, type=float,
-                        help="Next_step_damage = current_step_damage * daec + dalc")
+                        help="Next_step_damage = current_step_damage * daec + dalc; "
+                             " 0 <= dalc <= 1 (1 is the lethal threshold)")
     parser.add_argument("-daec", "--damage_accumulation_exponential_component", default=0, type=float,
                         help="Next_step_damage = current_step_damage * daec + dalc")
-    parser.add_argument("-dlt", "--damage_lethal_threshold", default=1000, type=float,
-                        help="if -dsd == threshold, a cell dies if its damage is greater than -dlt;"
-                             "if -dsd == linear, a cell dies with probability 1 if its damage is equal to -dlt,"
-                             "but if it is less, it dies with probability 1/dlt at each time step")
-    parser.add_argument("-dsd", "--damage_survival_dependency", default=1, type=int,
+    parser.add_argument("-dsd", "--damage_survival_dependency", default=1, type=float,
                         help="For each cell at each time step "
-                             "P(death) = (current_damage/damage_lethal_threshold)^damage_survival_dependency")
+                             "P(death) = current_damage^damage_survival_dependency; "
+                             "0 <= dsd <= inf. "
+                             "To get threshold-like dependency set dsd close to 0. To punish even for minimal damage "
+                             "accumulation set dsd to higher values.")
     parser.add_argument("-drd", "--damage_reproduction_dependency", default=True, type=bool,
                         help="if True, the expected age of reproduction is inversely proportional to the amount of "
                              "accumulated damage, if False no dependency")
@@ -678,7 +667,7 @@ if __name__ == "__main__":
     parser.add_argument("-chep", "--changing_environment_probability", default=0, type=float)
 
     # Technical
-    parser.add_argument("-ni", "--niterations", default=10000, type=int)
+    parser.add_argument("-ni", "--niterations", default=100000, type=int)
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
@@ -723,7 +712,6 @@ if __name__ == "__main__":
                 "damage_repair_mode": args.repair_mode,
                 "damage_accumulation_linear_component": args.damage_accumulation_linear_component,
                 "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
-                "lethal_damage_threshold": args.damage_lethal_threshold,
                 "damage_survival_dependency": args.damage_survival_dependency,
                 "damage_reproduction_dependency": args.damage_reproduction_dependency,
                 "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
