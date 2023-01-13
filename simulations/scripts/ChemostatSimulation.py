@@ -13,10 +13,11 @@ import atexit
 import logging
 
 from itertools import filterfalse
+from collections import Counter
 
 TIME_STEP_DURATION = 1
 PRECISION = 3
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 class Chemostat:
@@ -68,6 +69,7 @@ class Cell:
     damage_accumulation_linear_component = 0.1
     lethal_damage_threshold = 1000
     damage_survival_dependency = "linear"
+    damage_reproduction_dependency = False
 
     # mutation rates
     asymmetry_mutation_rate = 0
@@ -95,6 +97,7 @@ class Cell:
         self._parent_id = parent_id
         self._age = age
         self._damage = damage
+        self.starting_damage = damage
         self.asymmetry = asymmetry
         self._has_reproduced = False
         self._has_died = ""
@@ -127,13 +130,13 @@ class Cell:
                 for j, x in enumerate(xx):
                     table[i, j] = Cell.lambda_large(x, alpha)
             print(" Done")
-            return pd.DataFrame(table, columns=[str(x) for x in xx.round(3)], index=alphas)
+            return pd.DataFrame(table, columns=[str(x) for x in xx.round(precision)], index=alphas)
 
         file = Path(Cell.lambda_large_lookup_path)
         if file.exists():
             lookup_table = pd.read_csv(str(file), index_col=0)
         else:
-            lookup_table = generate_the_table(lower_alpha=1, higher_alpha=50, lower_x=0, higher_x=1)
+            lookup_table = generate_the_table(lower_alpha=1, higher_alpha=50, lower_x=0, higher_x=10)
         if Cell.critical_nutrient_amount not in lookup_table.index:
             added_lookup_table = generate_the_table(lower_alpha=max(lookup_table.index),
                                                     higher_alpha=Cell.critical_nutrient_amount,
@@ -160,14 +163,17 @@ class Cell:
         Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
 
     def prob_of_division_from_lookup_table(self) -> float:
-        rate_of_uptake = (1 - self.damage/self.lethal_damage_threshold) * \
+        rate_of_uptake = ((1 - self.damage/self.lethal_damage_threshold) ** Cell.damage_reproduction_dependency) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
+        # rate_of_uptake = Cell.nutrient_accumulation_rate / self.chemostat.N
         if Cell.damage_repair_mode == "multiplicative":
             rate_of_uptake *= (1 - self._damage_repair_intensity**(1/Cell.repair_cost_coefficient))
         elif Cell.damage_repair_mode == "additive":
             rate_of_uptake *= (1 -
                                (self._damage_repair_intensity /
                                 self.lethal_damage_threshold)**(1/Cell.repair_cost_coefficient))
+        if rate_of_uptake <= 0:
+            return 0
         mu = Cell.critical_nutrient_amount / rate_of_uptake
         x = round(self.age / mu, PRECISION)
         if str(x) not in Cell.lambda_large_lookup.columns:
@@ -276,6 +282,18 @@ class Cell:
         """
         return self._has_died
 
+    @property
+    def starting_damage(self) -> float:
+        """
+
+        :return: amount of damage cell got at birth
+        """
+        return self._starting_damage
+
+    @starting_damage.setter
+    def starting_damage(self, damage):
+        self._starting_damage = damage
+
     @damage.setter
     def damage(self, damage):
         self._damage = max(damage, 0)
@@ -308,6 +326,7 @@ class Simulation:
         Cell.damage_accumulation_linear_component = \
             parameters["cell_parameters"]["damage_accumulation_linear_component"]
         Cell.damage_survival_dependency = parameters["cell_parameters"]["damage_survival_dependency"]
+        Cell.damage_reproduction_dependency = parameters["cell_parameters"]["damage_reproduction_dependency"]
 
         Cell.lethal_damage_threshold = parameters["cell_parameters"]["lethal_damage_threshold"]
         Cell.nutrient_accumulation_rate = parameters["cell_parameters"]["nutrient_accumulation_rate"]
@@ -378,7 +397,8 @@ class SimulationThread:
                  changing_environent_prob: float,
                  save_path: str,
                  mode: str,
-                 write_cells_table: bool):
+                 write_cells_table: bool,
+                 record_history=True):
         self.mode = mode
         self.chemostat = chemostat_obj
         self.changing_environment_prob = changing_environent_prob
@@ -387,14 +407,17 @@ class SimulationThread:
             False: 0
         }
         self.current_environment = True
-        self.history = History(self,
-                               save_path=save_path,
-                               run_id=run_id,
-                               run_name=run_name,
-                               thread_id=thread_id,
-                               write_cells_table=write_cells_table)
         if self.mode == "interactive":
             self.drawer = Drawer(self)
+
+        self.record_history = record_history
+        if self.record_history:
+            self.history = History(self,
+                                   save_path=save_path,
+                                   run_id=run_id,
+                                   run_name=run_name,
+                                   thread_id=thread_id,
+                                   write_cells_table=write_cells_table)
 
     def _step(self, step_number: int) -> None:
         # If there are no cells, don't do anything
@@ -409,7 +432,8 @@ class SimulationThread:
             new_cells += cell.reproduce(offspring_id)
 
         # History is recorded
-        self.history.record(step_number)
+        if self.record_history:
+            self.history.record(step_number)
         # Move to the next time step
         self.chemostat.cells = new_cells
 
@@ -438,8 +462,9 @@ class SimulationThread:
                 self._step(step_number)
                 if self.chemostat.N == 0:
                     break
-        self.history.save()
-        self.history.SQLdb.close()
+        if self.record_history:
+            self.history.save()
+            self.history.SQLdb.close()
 
     def _change_environment(self) -> None:
         if self.changing_environment_prob and random.uniform(0, 1) < self.changing_environment_prob:  # speed up
@@ -483,7 +508,8 @@ class History:
                 "columns":
                     {
                         "cell_id": "INTEGER",
-                        "parent_id": "INTEGER"
+                        "parent_id": "INTEGER",
+                        "starting_damage": "REAL"
                     },
                 "additional": ["PRIMARY KEY(cell_id)",
                                "FOREIGN KEY(cell_id) REFERENCES cells (cell_id)",
@@ -504,6 +530,7 @@ class History:
         self.thread_id = thread_id
         self.write_cells_table = write_cells_table
         self.history_table, self.cells_table, self.genealogy_table = None, None, None
+        self.traits_history = {}
         self.SQLdb = sqlite3.connect(f"{self.save_path}/{self.run_id}_{self.thread_id}.sqlite")
         # If the program exist with error, the connection will still be closed
         atexit.register(self.SQLdb.close)
@@ -511,7 +538,6 @@ class History:
         self.reset()
         # This is needed not to record the same cell twice in the genealogy table
         self.max_cell_in_genealogy = -1
-
 
     def create_tables(self) -> None:
         for table in self.tables:
@@ -568,9 +594,19 @@ class History:
             df_to_add = pd.DataFrame.from_dict(
                 {"cell_id": [cell.id for cell in cells],
                  "parent_id": [cell.parent_id for cell in cells],
+                 "starting_damage": [cell.starting_damage for cell in cells]
                  })
             self.genealogy_table.append(df_to_add)
             self.max_cell_in_genealogy = max(df_to_add.cell_id)
+
+        # Make a record in traits
+        asymmetries = Counter([cell.asymmetry for cell in self.simulation_thread.chemostat.cells])
+        repairs = Counter([cell.damage_repair_intensity for cell in self.simulation_thread.chemostat.cells])
+        self.traits_history[time_step] = {
+            "asymmetry": asymmetries,
+            "repair": repairs
+        }
+
         if len(self.cells_table) > 900 or len(self.history_table) > 2000:
             self.save()
 
@@ -584,6 +620,8 @@ class History:
                 table.to_sql(stem, self.SQLdb, if_exists='append', index=False)
         self.SQLdb.commit()
         self.reset()
+        with open(f"{self.save_path}/traits.json", "w") as fl:
+            json.dump(self.traits_history, fl)
 
     def __str__(self):
         return str(self.history_table)
@@ -623,6 +661,9 @@ if __name__ == "__main__":
                         help="if linear, the probability of cell death is proportional to the amount of accumulated "
                              "damage,"
                              "if threshold, cell only dies if its damage exceeds a threshold (tunable parameter)")
+    parser.add_argument("-drd", "--damage_reproduction_dependency", default=True, type=bool,
+                        help="if True, the expected age of reproduction is inversely proportional to the amount of "
+                             "accumulated damage, if False no dependency")
 
     # Asymmetry
     parser.add_argument("-a", "--asymmetry", default=0, type=float)
@@ -644,9 +685,9 @@ if __name__ == "__main__":
     parser.add_argument("-ni", "--niterations", default=10000, type=int)
     parser.add_argument("-nt", "--nthreads", default=1, type=int)
     parser.add_argument("-np", "--nprocs", default=1, type=int)
-    parser.add_argument("-m", "--mode", default="cluster", type=str, choices=["cluster", "local", "interactive"])
+    parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
     # noinspection PyTypeChecker
-    parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--cells_table", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--from_json", type=str, default="")
     parser.add_argument("--run_name", type=str, default="")
     parser.add_argument("--add_runs", type=str, default="")
@@ -688,6 +729,7 @@ if __name__ == "__main__":
                 "damage_accumulation_exponential_component": args.damage_accumulation_exponential_component,
                 "lethal_damage_threshold": args.damage_lethal_threshold,
                 "damage_survival_dependency": args.damage_survival_dependency,
+                "damage_reproduction_dependency": args.damage_reproduction_dependency,
                 "nutrient_accumulation_rate": args.nutrient_accumulation_rate,
                 "critical_nutrient_amount": args.nutrient_critical_amount,
                 "asymmetry_mutation_rate": args.asymmetry_mutation_rate,
