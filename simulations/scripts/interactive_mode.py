@@ -26,11 +26,11 @@ class Drawer:
         self.resolution = 10  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
         plt.ion()
-        self.fig, self.ax = plt.subplots(3, 1)
+        self.fig, self.ax = plt.subplots(4, 1)
         plt.show(block=False)
         atexit.register(plt.close)
-        for i, title in enumerate(["Population size", "Mean damage", "Asymmetry/Repair"]):
-            self.ax[i].set_title(title, fontsize=10)
+        for i, ylabel in enumerate(["Population size", "Mean damage", "Asymmetry", "Repair"]):
+            self.ax[i].set_ylabel(ylabel, fontsize=10)
 
         data_dicts = [
             {"ax_num": 0, "color": "blue", "alpha": 1,
@@ -50,8 +50,7 @@ class Drawer:
             {"ax_num": 2, "color": "green", "alpha": 1,
              "update_function":
                  lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()
-                 if self.simulation_thread.chemostat.N else 0,
-             "label": "asymmetry"},
+                 if self.simulation_thread.chemostat.N else 0},
             {"ax_num": 2, "color": "green", "alpha": 0.5,
              "update_function":
                  lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).max()
@@ -60,18 +59,17 @@ class Drawer:
              "update_function":
                  lambda: np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).min()
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2, "color": "red", "alpha": 1,
+            {"ax_num": 3, "color": "red", "alpha": 1,
              "update_function":
                  lambda: np.array([cell.damage_repair_intensity
                                    for cell in self.simulation_thread.chemostat.cells]).mean()
-                 if self.simulation_thread.chemostat.N else 0,
-             "label": "repair"},
-            {"ax_num": 2, "color": "red", "alpha": 0.5,
+                 if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 3, "color": "red", "alpha": 0.5,
              "update_function":
                  lambda: np.array([cell.damage_repair_intensity
                                    for cell in self.simulation_thread.chemostat.cells]).max()
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 2, "color": "red", "alpha": 0.5,
+            {"ax_num": 3, "color": "red", "alpha": 0.5,
              "update_function":
                  lambda: np.array([cell.damage_repair_intensity
                                    for cell in self.simulation_thread.chemostat.cells]).min()
@@ -83,7 +81,7 @@ class Drawer:
                            self.ax[data_dict["ax_num"]],
                            data_dict["color"],
                            data_dict["alpha"],
-                           data_dict["update_function"], data_dict.get("label")) for data_dict in data_dicts]
+                           data_dict["update_function"]) for data_dict in data_dicts]
 
         plt.get_current_fig_manager().full_screen_toggle()
 
@@ -120,15 +118,13 @@ class Plot:
                  ax: plt.Axes,
                  color: str,
                  alpha: str,
-                 update_function, label=None):
+                 update_function):
         self.drawer, self.plot_how_many = drawer, plot_how_many
         self.ax, self.color, self.alpha = ax, color, alpha
         self.update_function = update_function
         self.xdata, self.ydata = [], []
-        if label:
-            self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha, label=label)
-        else:
-            self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
+        self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
+        self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
 
     def collect_data(self, step_num: int):
         """
@@ -158,4 +154,3 @@ class Plot:
         """
         self.ax.relim()
         self.ax.autoscale_view(tight=True)
-        plt.legend()
