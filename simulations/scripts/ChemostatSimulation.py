@@ -68,7 +68,7 @@ class Cell:
     damage_accumulation_exponential_component = 0
     damage_accumulation_linear_component = 0.1
     lethal_damage_threshold = 1000
-    damage_survival_dependency = "linear"
+    damage_survival_dependency = 1
     damage_reproduction_dependency = False
 
     # mutation rates
@@ -190,9 +190,7 @@ class Cell:
             self.damage *= 1 - self._damage_repair_intensity
         elif Cell.damage_repair_mode == "additive":
             self.damage -= self.damage_repair_intensity * TIME_STEP_DURATION
-        if Cell.damage_survival_dependency == "threshold" and 1 < self.damage / Cell.lethal_damage_threshold or \
-                Cell.damage_survival_dependency == "linear" \
-                and np.random.uniform(0, 1) < self.damage / Cell.lethal_damage_threshold:
+        if np.random.uniform(0, 1) < (self.damage / Cell.lethal_damage_threshold)**Cell.damage_survival_dependency:
             self.die(cause="damage")
 
     def reproduce(self, offspring_id: int) -> list:
@@ -656,11 +654,9 @@ if __name__ == "__main__":
                         help="if -dsd == threshold, a cell dies if its damage is greater than -dlt;"
                              "if -dsd == linear, a cell dies with probability 1 if its damage is equal to -dlt,"
                              "but if it is less, it dies with probability 1/dlt at each time step")
-    parser.add_argument("-dsd", "--damage_survival_dependency", default="linear", type=str,
-                        choices=["linear", "threshold"],
-                        help="if linear, the probability of cell death is proportional to the amount of accumulated "
-                             "damage,"
-                             "if threshold, cell only dies if its damage exceeds a threshold (tunable parameter)")
+    parser.add_argument("-dsd", "--damage_survival_dependency", default=1, type=int,
+                        help="For each cell at each time step "
+                             "P(death) = (current_damage/damage_lethal_threshold)^damage_survival_dependency")
     parser.add_argument("-drd", "--damage_reproduction_dependency", default=True, type=bool,
                         help="if True, the expected age of reproduction is inversely proportional to the amount of "
                              "accumulated damage, if False no dependency")
