@@ -352,7 +352,8 @@ class Simulation:
                                              asymmetry=parameters["asymmetry"],
                                              damage_repair_intensity=parameters["damage_repair_intensity"]
                                          ),
-                                         changing_environent_prob=parameters["changing_environment_probability"],
+                                         changing_environment_prob=parameters["changing_environment_probability"],
+                                         harsh_environment_frac=parameters["harsh_environment_frac"],
                                          save_path=save_path,
                                          mode=mode,
                                          write_cells_table=write_cells_table,
@@ -389,19 +390,37 @@ class SimulationThread:
                  run_name: str,
                  thread_id: int,
                  chemostat_obj: Chemostat,
-                 changing_environent_prob: float,
+                 changing_environment_prob: float,
+                 harsh_environment_frac: float,
                  save_path: str,
                  mode: str,
                  write_cells_table: bool,
                  record_history=True):
         self.mode = mode
         self.chemostat = chemostat_obj
-        self.changing_environment_prob = changing_environent_prob
+
+        # Changing environment parameters
+        if changing_environment_prob == 0:
+            self.environment_switch_probs = [0, 0]
+            if harsh_environment_frac == 1:
+                self.current_environment = True
+            elif harsh_environment_frac == 0:
+                self.current_environment = False
+            else:
+                raise ValueError(f"If changing_environment_prob == 0, "
+                                 f"harsh_environment_frac should be 0 or 1, not {harsh_environment_frac}")
+        else:
+            if harsh_environment_frac in [0, 1]:
+                raise ValueError(f"If harsh_environment_frac == {harsh_environment_frac}, "
+                                 f"changing_environment_prob should be 0")
+            self.environment_switch_probs = [changing_environment_prob/(2*(1-harsh_environment_frac)),
+                                             changing_environment_prob/(2*harsh_environment_frac)]
+            self.current_environment = True
         self.changing_environment_val = {
             True: Cell.damage_accumulation_linear_component,
             False: 0
         }
-        self.current_environment = True
+
         if self.mode == "interactive":
             self.drawer = Drawer(self)
 
@@ -415,8 +434,6 @@ class SimulationThread:
                                    write_cells_table=write_cells_table)
 
     def step(self, step_number: int) -> None:
-        # If there are no cells, don't do anything
-
         # Cells are diluted
         self.chemostat.dilute()
 
@@ -429,6 +446,7 @@ class SimulationThread:
         # History is recorded
         if self.record_history:
             self.history.record(step_number)
+
         # Move to the next time step
         self.chemostat.cells = new_cells
 
@@ -458,7 +476,8 @@ class SimulationThread:
             self.history.SQLdb.close()
 
     def _change_environment(self) -> None:
-        if self.changing_environment_prob and random.uniform(0, 1) < self.changing_environment_prob:
+        if self.environment_switch_probs[int(self.current_environment)] \
+                and random.uniform(0, 1) < self.environment_switch_probs[int(self.current_environment)]:
             self.current_environment = not self.current_environment
             Cell.damage_accumulation_linear_component = self.changing_environment_val[self.current_environment]
 
@@ -668,7 +687,8 @@ if __name__ == "__main__":
     parser.add_argument("-rcc", "--repair_cost_coefficient", default=1, type=float)
 
     # Changing environment
-    parser.add_argument("-chep", "--changing_environment_probability", default=0, type=float)
+    parser.add_argument("-chep", "--changing_environment_probability", default=0.0, type=float)
+    parser.add_argument("-hef", "--harsh_environment_frac", default=1.0, type=float)
 
     # Technical
     parser.add_argument("-ni", "--niterations", default=100000, type=int)
@@ -728,7 +748,9 @@ if __name__ == "__main__":
             },
             "asymmetry": args.asymmetry,
             "damage_repair_intensity": args.damage_repair_intensity,
-            "changing_environment_probability": args.changing_environment_probability
+            "changing_environment_probability": args.changing_environment_probability,
+            "harsh_environment_frac": args.harsh_environment_frac,
+
         }
 
     simulation = Simulation(parameters=parameters,
