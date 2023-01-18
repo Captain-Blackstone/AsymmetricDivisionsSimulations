@@ -11,7 +11,6 @@ import os
 import datetime
 
 
-
 class FixationSimulation:
     def __init__(self,
                  parameters: dict,
@@ -19,6 +18,7 @@ class FixationSimulation:
                  mode: str,
                  n_threads: int, n_procs: int, setup: dict):
 
+        self.mode = mode
         self.set_cell_params(parameters)
         existing = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
         if existing:
@@ -30,14 +30,13 @@ class FixationSimulation:
                                              volume_val=parameters["chemostat_parameters"]["volume"],
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
                                              n_cells=100,
-                                             asymmetry=parameters["asymmetry"],
-                                             damage_repair_intensity=parameters["damage_repair_intensity"]
+                                             asymmetry=setup["wt"]["asymmetry"],
+                                             damage_repair_intensity=setup["wt"]["repair"]
                                          ),
                                         thread_id=i,
                                          save_path=save_path, setup=setup) for i in range(max_thread,
                                                                                           max_thread + n_threads)]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
-
 
     def run_thread(self, thread_number: int) -> None:
         self.threads[thread_number].run()
@@ -57,8 +56,7 @@ class FixationSimulation:
                 for process in processes:
                     process.join()
 
-    @staticmethod
-    def set_cell_params(parameters):
+    def set_cell_params(self, parameters):
         Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
@@ -74,7 +72,8 @@ class FixationSimulation:
         Cell.repair_mutation_step = parameters["cell_parameters"]["repair_mutation_step"]
         Cell.repair_mutation_rate = parameters["cell_parameters"]["repair_mutation_rate"]
         Cell.repair_cost_coefficient = parameters["cell_parameters"]["repair_cost_coefficient"]
-        Cell.lambda_large_lookup_path = "./lambda_large_lookup_table.csv"
+        if self.mode == "cluster":
+            Cell.lambda_large_lookup_path = "./lambda_large_lookup_table.csv"
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
 
 
@@ -115,6 +114,7 @@ class FixationSimulatonThread(SimulationThread):
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
 
         while True:
+            print(self.chemostat.N)
             if self.chemostat.N == 0:
                 break
             if self.incept is False and \
@@ -136,6 +136,7 @@ class FixationSimulatonThread(SimulationThread):
                         cell.asymmetry = self.setup['mut']['asymmetry']
                         cell.damage_repair_intensity = self.setup['mut']['repair']
                         self.incept = False
+                        self.starting_popsize = self.chemostat.N
                         break
             if self.incept == False:
                 self.run_length += 1
@@ -147,8 +148,12 @@ class FixationSimulatonThread(SimulationThread):
         elif self.chemostat.cells[0].asymmetry == self.setup['wt']['asymmetry'] \
                 and self.chemostat.cells[0].damage_repair_intensity == self.setup['wt']['repair']:
             winner = 'wt'
-        else:
+        elif self.chemostat.cells[0].asymmetry == self.setup['mut']['asymmetry'] \
+                and self.chemostat.cells[0].damage_repair_intensity == self.setup['mut']['repair']:
             winner = 'mut'
+        else:
+            winner = f"something went wrong, " \
+                     f"a = {self.chemostat.cells[0].asymmetry}, r = {self.chemostat.cells[0].damage_repair_intensity}"
         with open(f"{save_path}/{self.thread_id}", "w") as fl:
             fl.write(f"n_steps: {self.run_length}\n")
             fl.write(f"winner: {winner}\n")
