@@ -1,4 +1,6 @@
 import random
+import string
+from wonderwords import RandomWord
 
 import pandas as pd
 import datetime
@@ -81,7 +83,7 @@ class Cell:
     lambda_large_lookup = None
 
     # damage repair
-    damage_repair_mode = "multiplicative"
+    damage_repair_mode = "additive"
     repair_cost_coefficient = 1
 
     def __init__(self,
@@ -164,11 +166,9 @@ class Cell:
     def prob_of_division_from_lookup_table(self) -> float:
         rate_of_uptake = ((1 - self.damage) ** Cell.damage_reproduction_dependency) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
-        # rate_of_uptake = Cell.nutrient_accumulation_rate / self.chemostat.N
-        if Cell.damage_repair_mode == "multiplicative":
-            rate_of_uptake *= (1 - self._damage_repair_intensity**(1/Cell.repair_cost_coefficient))
-        elif Cell.damage_repair_mode == "additive":
-            rate_of_uptake *= (1 - self._damage_repair_intensity)**(1/Cell.repair_cost_coefficient)
+        if self._damage_repair_intensity > 0:
+            rate_of_uptake *= (1 - self._damage_repair_intensity/Cell.damage_accumulation_linear_component) **\
+                              Cell.repair_cost_coefficient
         if rate_of_uptake <= 0:
             return 0
         mu = Cell.critical_nutrient_amount / rate_of_uptake
@@ -309,9 +309,9 @@ class Simulation:
                  save_path: str,
                  mode: str,
                  n_threads: int, n_procs: int,
-                 run_name: str,
-                 write_cells_table: bool,
-                 add_runs: str):
+                 run_name="",
+                 write_cells_table=False,
+                 add_runs="", record_history=True):
         Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
@@ -337,8 +337,11 @@ class Simulation:
         else:
             run_id = str(round(datetime.datetime.now().timestamp() * 1000000))
             max_existing_thread = 0
-        if run_name:
-            run_name = "_" + run_name
+        if not run_name:
+            letter = np.random.choice(list(string.ascii_lowercase))
+            run_name = "_".join([RandomWord().word(starts_with=letter, include_parts_of_speech=["adjective"]),
+                                 RandomWord().word(starts_with=letter, include_parts_of_speech=["noun"])])
+        run_name = "_" + run_name
         (Path(save_path) / Path(f"{run_id}{run_name}")).mkdir(exist_ok=True)
         self.threads = [SimulationThread(run_id=run_id, run_name=run_name,
                                          thread_id=i + 1,
@@ -352,7 +355,8 @@ class Simulation:
                                          changing_environent_prob=parameters["changing_environment_probability"],
                                          save_path=save_path,
                                          mode=mode,
-                                         write_cells_table=write_cells_table) for i in
+                                         write_cells_table=write_cells_table,
+                                         record_history=record_history) for i in
                         range(max_existing_thread, max_existing_thread + n_threads)]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
@@ -410,7 +414,7 @@ class SimulationThread:
                                    thread_id=thread_id,
                                    write_cells_table=write_cells_table)
 
-    def _step(self, step_number: int) -> None:
+    def step(self, step_number: int) -> None:
         # If there are no cells, don't do anything
 
         # Cells are diluted
@@ -443,7 +447,7 @@ class SimulationThread:
             iterator = range(n_steps)
 
         for step_number in iterator:
-            self._step(step_number)
+            self.step(step_number)
             if self.mode == "interactive":
                 self.drawer.draw_step(step_number)
             if self.chemostat.N == 0:
@@ -657,8 +661,8 @@ if __name__ == "__main__":
 
     # Repair
     parser.add_argument("-dri", "--damage_repair_intensity", default=0, type=float)
-    parser.add_argument("-rm", "--repair_mode", default="multiplicative", type=str,
-                        choices=["multiplicative", "additive"])
+    parser.add_argument("-rm", "--repair_mode", default="additive", type=str,
+                        choices=["additive", "multiplicative"])
     parser.add_argument("-rmr", "--repair_mutation_rate", default=0, type=float)
     parser.add_argument("-rms", "--repair_mutation_step", default=0, type=float)
     parser.add_argument("-rcc", "--repair_cost_coefficient", default=1, type=float)
