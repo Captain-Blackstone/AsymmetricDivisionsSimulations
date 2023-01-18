@@ -20,6 +20,11 @@ class FixationSimulation:
                  n_threads: int, n_procs: int, setup: dict):
 
         self.set_cell_params(parameters)
+        existing = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
+        if existing:
+            max_thread = max(existing) + 1
+        else:
+            max_thread = 0
         self.threads = [FixationSimulatonThread(
                                         chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
@@ -29,12 +34,10 @@ class FixationSimulation:
                                              damage_repair_intensity=parameters["damage_repair_intensity"]
                                          ),
                                         thread_id=i,
-                                         save_path=save_path, setup=setup) for i in range(n_threads)]
+                                         save_path=save_path, setup=setup) for i in range(max_thread,
+                                                                                          max_thread + n_threads)]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
-        # Write parameters needed to identify simulation
-        with open(f"{save_path}/params.json", "w") as fl:
-            json.dump(parameters, fl)
 
     def run_thread(self, thread_number: int) -> None:
         self.threads[thread_number].run()
@@ -71,6 +74,7 @@ class FixationSimulation:
         Cell.repair_mutation_step = parameters["cell_parameters"]["repair_mutation_step"]
         Cell.repair_mutation_rate = parameters["cell_parameters"]["repair_mutation_rate"]
         Cell.repair_cost_coefficient = parameters["cell_parameters"]["repair_cost_coefficient"]
+        Cell.lambda_large_lookup_path = "./lambda_large_lookup_table.csv"
         Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
 
 
@@ -106,7 +110,6 @@ class FixationSimulatonThread(SimulationThread):
         self.skipfirst = 5000
         self.incept = None
         self.starting_popsize = None
-
 
     def run(self, n_steps=0):
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
@@ -149,7 +152,7 @@ class FixationSimulatonThread(SimulationThread):
         with open(f"{save_path}/{self.thread_id}", "w") as fl:
             fl.write(f"n_steps: {self.run_length}\n")
             fl.write(f"winner: {winner}\n")
-            fl.write(f"population_start: {self.chemostat.N}\n")
+            fl.write(f"population_start: {self.starting_popsize}\n")
             fl.write(f"population_end: {self.chemostat.N}\n")
 
 
@@ -158,6 +161,8 @@ class FixationSimulatonThread(SimulationThread):
 parser = argparse.ArgumentParser(prog="SC")
 parser.add_argument("--params", type=str, required=True)
 parser.add_argument("--folder", type=str, required=True)
+parser.add_argument("--mode", type=str, choices=["local", "cluster"], default="local")
+
 parser.add_argument("--wta", type=float, required=True)
 parser.add_argument("--wtr", type=float, required=True)
 parser.add_argument("--muta", type=float, required=True)
@@ -187,14 +192,27 @@ setup = {
     "mut": {"asymmetry": args.muta,
             "repair": args.mutr}
 }
-save_path = f"../data/selection_coefficients/{args.folder}/"
+if args.mode == "local":
+    root_path = "../data/selection_coefficients"
+elif args.mode == "cluster":
+    root_path = "./selection_coefficients"
+else:
+    root_path = "./"
+
+Path(root_path).mkdir(exist_ok=True)
+save_path = f"{root_path}/{args.folder}/"
 Path(save_path).mkdir(exist_ok=True)
-save_path += f"a_{setup['wt']['asymmetry']}_r_{setup['wt']['repair']}_vs_a_{setup['mut']['asymmetry']}_r_{setup['wt']['repair']}"
+# Write parameters needed to identify simulation
+with open(f"{save_path}/params.json", "w") as fl:
+    json.dump(parameters, fl)
+
+save_path += f"a_{setup['wt']['asymmetry']}_r_{setup['wt']['repair']}_vs_a_{setup['mut']['asymmetry']}_r_{setup['mut']['repair']}"
 Path(save_path).mkdir(exist_ok=True)
+
 simulation = FixationSimulation(parameters=parameters,
-                        save_path=save_path,
-                        n_threads=args.nthreads,
-                        n_procs=args.nprocs,
-                        mode="local", setup=setup)
+                                save_path=save_path,
+                                n_threads=args.nthreads,
+                                n_procs=args.nprocs,
+                                mode="local", setup=setup)
 simulation.run()
 
