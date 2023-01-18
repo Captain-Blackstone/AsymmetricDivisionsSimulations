@@ -398,7 +398,7 @@ class SimulationThread:
         self.chemostat = chemostat_obj
         self.changing_environment_prob = changing_environent_prob
         self.changing_environment_val = {
-            True: Cell.damage_accumulation_exponential_component,
+            True: Cell.damage_accumulation_linear_component,
             False: 0
         }
         self.current_environment = True
@@ -458,9 +458,9 @@ class SimulationThread:
             self.history.SQLdb.close()
 
     def _change_environment(self) -> None:
-        if self.changing_environment_prob and random.uniform(0, 1) < self.changing_environment_prob:  # speed up
+        if self.changing_environment_prob and random.uniform(0, 1) < self.changing_environment_prob:
             self.current_environment = not self.current_environment
-            Cell.damage_accumulation_exponential_component = self.changing_environment_val[self.current_environment]
+            Cell.damage_accumulation_linear_component = self.changing_environment_val[self.current_environment]
 
 
 class History:
