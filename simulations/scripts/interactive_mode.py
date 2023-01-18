@@ -45,37 +45,34 @@ class Drawer:
             repair_plot = True
 
         self.fig, self.ax = plt.subplots(n_plots + damage_plot + asymmetry_plot + repair_plot, 1)
-        if n_plots == 1:
+        if n_plots + damage_plot + asymmetry_plot + repair_plot == 1:
             self.ax = [self.ax]
-
         plt.show(block=False)
         atexit.register(plt.close)
-        for i, ylabel in enumerate(["Population size", "Mean damage", "Asymmetry", "Repair"][:n_plots + asymmetry_plot + repair_plot]):
-            self.ax[i].set_ylabel(ylabel, fontsize=10)
         line_data_dicts = [
-            {"ax_num": 0, "color": "blue", "alpha": 1,
+            {"ax_num": 0, "color": "blue", "alpha": 1, "label": "Population size",
              "update_function": lambda: self.simulation_thread.chemostat.N},
-            {"ax_num": damage_plot, "color": "grey", "alpha": 1,
+            {"ax_num": 1, "color": "grey", "alpha": 1, "label": "Mean damage",
              "update_function":
                  lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": damage_plot, "color": "grey", "alpha": 0.5,
+            {"ax_num": 1, "color": "grey", "alpha": 0.5,
              "update_function":
                  lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": damage_plot, "color": "grey", "alpha": 0.5,
+            {"ax_num": 1, "color": "grey", "alpha": 0.5,
              "update_function":
                  lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
                  if self.simulation_thread.chemostat.N else 0}]
         frequency_data_dicts = [
-            {"ax_num": n_plots + damage_plot, "color": "green", "label": "Asymmetry", "max" : 1,
+            {"ax_num": int(n_plots + damage_plot), "color": "green", "label": "Asymmetry", "max": 1,
              "update_function":
                  lambda: np.array([round(cell.asymmetry, 5) for cell in self.simulation_thread.chemostat.cells])
                  if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": n_plots + asymmetry_plot, "color": "red", "label": "Repair",
+            {"ax_num": int(n_plots + damage_plot + asymmetry_plot), "color": "red", "label": "Repair",
              "max": self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component,
              "update_function":
-                 lambda: np.array([round(cell.damage_repair_intensity, 5)
+                 lambda: np.array([round(cell.damage_repair_intensity, 10)
                                    for cell in self.simulation_thread.chemostat.cells])
                  if self.simulation_thread.chemostat.N else 0}
         ]
@@ -85,13 +82,12 @@ class Drawer:
             frequency_data_dicts.pop(1)
         if not asymmetry_plot:
             frequency_data_dicts.pop(0)
-
         self.plots = [LinePlot(self,
                            self.plot_how_many,
                            self.ax[data_dict["ax_num"]],
                            data_dict["color"],
                            data_dict["alpha"],
-                           data_dict["update_function"]) for data_dict in line_data_dicts]
+                           data_dict["update_function"], data_dict.get("label")) for data_dict in line_data_dicts]
         self.plots.extend([
             FrequencyPlot(self,
                      self.plot_how_many,
@@ -134,11 +130,13 @@ class Plot:
                  plot_how_many: int,
                  ax: plt.Axes,
                  color: str,
-                 update_function):
+                 update_function, ylabel=None):
         self.drawer, self.plot_how_many = drawer, plot_how_many
         self.ax, self.color = ax, color
         self.update_function = update_function
         self.xdata, self.ydata = [], []
+        if ylabel is not None:
+            self.ax.set_ylabel(ylabel, fontsize=10)
 
     def collect_data(self, step_num: int):
         """
@@ -171,8 +169,8 @@ class LinePlot(Plot):
                  ax: plt.Axes,
                  color: str,
                  alpha: str,
-                 update_function):
-        super().__init__(drawer, plot_how_many, ax, color, update_function)
+                 update_function, ylabel=None):
+        super().__init__(drawer, plot_how_many, ax, color, update_function, ylabel)
         self.alpha = alpha
         self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
 
