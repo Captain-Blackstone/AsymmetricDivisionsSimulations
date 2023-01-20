@@ -1,3 +1,5 @@
+import pandas as pd
+
 from ChemostatSimulation import SimulationThread, Chemostat, Cell
 import json
 import logging
@@ -16,15 +18,10 @@ class FixationSimulation:
                  parameters: dict,
                  save_path: str,
                  mode: str,
-                 n_threads: int, n_procs: int, setup: dict):
-
+                 n_threads: int, setup: dict):
+        self.save_path = save_path
         self.mode = mode
         self.set_cell_params(parameters)
-        existing = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
-        if existing:
-            max_thread = max(existing) + 1
-        else:
-            max_thread = 0
         self.threads = [FixationSimulatonThread(
                                         chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
@@ -34,27 +31,18 @@ class FixationSimulation:
                                              damage_repair_intensity=setup["wt"]["repair"]
                                          ),
                                         thread_id=i,
-                                         save_path=save_path, setup=setup) for i in range(max_thread,
-                                                                                          max_thread + n_threads)]
-        self.n_procs = n_procs if mode in ["local", "interactive"] else 1
+                                        save_path=save_path, setup=setup) for i in range(n_threads)]
+        self.df = pd.DataFrame(
+            columns=["wt_a", "wt_r", "mut_a", "mut_r", "population_start", "population_end", "winner", "n_steps"])
 
     def run_thread(self, thread_number: int) -> None:
         self.threads[thread_number].run()
 
     def run(self) -> None:
-        if self.n_procs == 1:
-            for thread in self.threads:
-                thread.run()
-        elif self.n_procs > 1:
-            for i in tqdm(range(0, len(self.threads), self.n_procs)):
-                processes = []
-                for j in range(i, min(i + self.n_procs, len(self.threads))):
-                    processes.append(multiprocessing.Process(target=self.run_thread,
-                                                             args=[j]))
-                for process in processes:
-                    process.start()
-                for process in processes:
-                    process.join()
+        for thread in self.threads:
+            thread.run()
+            self.df = pd.concat([self.df, pd.DataFrame.from_dict(thread.result)], ignore_index=True)
+            self.df.to_csv(self.save_path, sep="\t", index=False)
 
     def set_cell_params(self, parameters):
         Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
@@ -98,7 +86,8 @@ class FixationSimulatonThread(SimulationThread):
                          run_name="",
                          thread_id=0,
                          chemostat_obj=chemostat_obj,
-                         changing_environent_prob=0,
+                         changing_environment_prob=0,
+                         harsh_environment_frac=1,
                          mode="local",
                          save_path="",
                          write_cells_table=False,
@@ -109,12 +98,12 @@ class FixationSimulatonThread(SimulationThread):
         self.skipfirst = 5000
         self.incept = None
         self.starting_popsize = None
+        self.result = None
 
     def run(self, n_steps=0):
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
 
         while True:
-            print(self.chemostat.N)
             if self.chemostat.N == 0:
                 break
             if self.incept is False and \
@@ -154,11 +143,10 @@ class FixationSimulatonThread(SimulationThread):
         else:
             winner = f"something went wrong, " \
                      f"a = {self.chemostat.cells[0].asymmetry}, r = {self.chemostat.cells[0].damage_repair_intensity}"
-        with open(f"{save_path}/{self.thread_id}", "w") as fl:
-            fl.write(f"n_steps: {self.run_length}\n")
-            fl.write(f"winner: {winner}\n")
-            fl.write(f"population_start: {self.starting_popsize}\n")
-            fl.write(f"population_end: {self.chemostat.N}\n")
+        self.result = {"wt_a": [self.setup["wt"]["asymmetry"]], "wt_r": [self.setup["wt"]["repair"]],
+               "mut_a": [self.setup["mut"]["asymmetry"]], "mut_r": [self.setup["mut"]["repair"]],
+               "n_steps": [self.run_length], "winner": [winner], "population_start": [self.starting_popsize],
+               "population_end": [self.chemostat.N]}
 
 
 
@@ -173,7 +161,6 @@ parser.add_argument("--wtr", type=float, required=True)
 parser.add_argument("--muta", type=float, required=True)
 parser.add_argument("--mutr", type=float, required=True)
 parser.add_argument("-nt", "--nthreads", type=int, default=1)
-parser.add_argument("-np", "--nprocs", type=int, default=1)
 
 
 args = parser.parse_args()
@@ -211,13 +198,11 @@ Path(save_path).mkdir(exist_ok=True)
 with open(f"{save_path}/params.json", "w") as fl:
     json.dump(parameters, fl)
 
-save_path += f"a_{setup['wt']['asymmetry']}_r_{setup['wt']['repair']}_vs_a_{setup['mut']['asymmetry']}_r_{setup['mut']['repair']}"
-Path(save_path).mkdir(exist_ok=True)
+save_path += f"a_{setup['wt']['asymmetry']}_r_{setup['wt']['repair']}_vs_a_{setup['mut']['asymmetry']}_r_{setup['mut']['repair']}.tsv"
 
 simulation = FixationSimulation(parameters=parameters,
                                 save_path=save_path,
                                 n_threads=args.nthreads,
-                                n_procs=args.nprocs,
                                 mode="local", setup=setup)
 simulation.run()
 
