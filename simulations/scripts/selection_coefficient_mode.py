@@ -7,8 +7,6 @@ import argparse
 from pathlib import Path
 from sklearn.linear_model import LinearRegression
 import numpy as np
-import multiprocessing
-from tqdm import tqdm
 import os
 import datetime
 
@@ -95,7 +93,7 @@ class FixationSimulatonThread(SimulationThread):
         self.run_length = 0
         self.thread_id = thread_id
         self.popsizes = []
-        self.skipfirst = 5000
+        self.skipfirst = 1000
         self.incept = None
         self.starting_popsize = None
         self.result = None
