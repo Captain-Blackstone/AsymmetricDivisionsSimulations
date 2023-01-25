@@ -72,7 +72,7 @@ class Drawer:
             {"ax_num": int(n_plots + damage_plot + asymmetry_plot), "color": "red", "label": "Repair",
              "max": self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component,
              "update_function":
-                 lambda: np.array([round(cell.damage_repair_intensity, 10)
+                 lambda: np.array([round(cell.damage_repair_intensity, 24)
                                    for cell in self.simulation_thread.chemostat.cells])
                  if self.simulation_thread.chemostat.N else 0}
         ]
