@@ -9,7 +9,9 @@ dataframes = {
     "linear_da":
         "../../selection_coefficients/linear_da/linear_da_selection_coefficients_raw_data.tsv",
     "linear_da_lower_cost":
-        "../../selection_coefficients/linear_da_lower_cost/linear_da_lower_cost_selection_coefficients_raw_data.tsv"
+        "../../selection_coefficients/linear_da_lower_cost/linear_da_lower_cost_selection_coefficients_raw_data.tsv",
+    "linear_da_max_cost_at_1":
+        "../../selection_coefficients/linear_da_max_cost_at_1/linear_da_max_cost_at_1_raw_data.tsv"
 }
 
 params = {
@@ -20,7 +22,7 @@ params = {
     },
     "repair": {
         "min": 0,
-        "max": 1e-6,
+        "max": 12e-7,
         "mutation_step": 1e-7
     }
 }
@@ -99,18 +101,10 @@ class Landscape:
         return time_df
 
     def draw_graph(self):
-        fig, ax = plt.subplots(figsize=(20, 10))
+        fig, ax = plt.subplots(figsize=(20, 20))
 
         # Get the color array
         colors = list(Color("red").range_to(Color("green"), 50))
-        space = []
-        for u, v in self.graph.edges:
-            weight1 = self.graph[u][v]['weight']
-            try:
-                weight2 = self.graph[v][u]['weight']
-            except KeyError:
-                continue
-            space.append(weight1/(weight1+weight2))
         bounds = np.linspace(0.1, 0.9, 50)
         resulting_colors = []
         for u, v in self.graph.edges:
@@ -126,6 +120,7 @@ class Landscape:
                     current_color = color
                 else:
                     break
+            self.graph[u][v]["color"] = str(current_color)
             resulting_colors.append(current_color)
 
         # Get node sizes list
@@ -139,14 +134,17 @@ class Landscape:
 
         nx.draw(self.graph,
                 pos={node: (int(node.split("_")[0]), int(node.split("_")[1])) for node in self.graph.nodes},
-                width=[(self.graph[u][v]['weight'])*5 for u, v in self.graph.edges],
+                width=[(self.graph[u][v]['weight'])*10 for u, v in self.graph.edges],
                 connectionstyle="arc3,rad=0.1",
-                edge_color=[str(el) for el in colors], node_size=[s*10 for s in sizes], ax=ax)
+                edge_color=[(self.graph[u][v]['color']) for u, v in self.graph.edges],
+                node_size=[s*5 for s in sizes],
+                ax=ax)
+
         ax.set_xlabel("asymmetry", fontsize=15)
         ax.set_ylabel("repair", fontsize=15)
-        ax.set_xticks(range(11))
+        ax.set_xticks(range(len(ASYMMETRIES)))
         ax.set_xticklabels(ASYMMETRIES)
-        ax.set_yticks(range(11))
+        ax.set_yticks(range(len(REPAIRS)))
         ax.set_yticklabels(REPAIRS)
         ax.tick_params(left=True, bottom=True, labelleft=True, labelbottom=True)
         ax.set_axis_on()
