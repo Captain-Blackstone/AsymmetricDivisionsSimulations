@@ -23,8 +23,17 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Chemostat:
-    def __init__(self, volume_val: float, dilution_rate: float, n_cells=None,
-                 asymmetry=0.0, damage_repair_intensity=0.0):
+    def __init__(self,
+                 volume_val: float,
+                 dilution_rate: float,
+                 cell_class=None,
+                 n_cells=None,
+                 asymmetry=0.0,
+                 damage_repair_intensity=0.0):
+        if cell_class is None:
+            self.cell_class = Cell
+        else:
+            self.cell_class = cell_class
         self.V = volume_val
         self.D = dilution_rate
         self._cells = []
@@ -41,10 +50,10 @@ class Chemostat:
         return self._cells
 
     def populate_with_cells(self, n_cells: int, asymmetry: float, damage_repair_intensity: float) -> None:
-        self._cells += [Cell(chemostat=self,
-                             cell_id=i,
-                             asymmetry=asymmetry,
-                             damage_repair_intensity=damage_repair_intensity) for i in range(n_cells)]
+        self._cells += [self.cell_class(chemostat=self,
+                                        cell_id=i,
+                                        asymmetry=asymmetry,
+                                        damage_repair_intensity=damage_repair_intensity) for i in range(n_cells)]
         self._n = len(self._cells)
 
     def dilute(self) -> None:
@@ -68,7 +77,7 @@ class Cell:
 
     # Damage accumulation
     damage_accumulation_exponential_component = 0
-    damage_accumulation_linear_component = 0.1
+    damage_accumulation_linear_component = 0
     damage_survival_dependency = 1
     damage_reproduction_dependency = False
 
@@ -164,11 +173,9 @@ class Cell:
         Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
 
     def prob_of_division_from_lookup_table(self) -> float:
-        rate_of_uptake = ((1 - self.damage) ** Cell.damage_reproduction_dependency) * \
+        rate_of_uptake = ((1 - self.damage) ** int(Cell.damage_reproduction_dependency)) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
-        if self._damage_repair_intensity > 0:
-            rate_of_uptake *= (1 - self._damage_repair_intensity/Cell.damage_accumulation_linear_component) **\
-                              Cell.repair_cost_coefficient
+        rate_of_uptake *= max(1 - self._damage_repair_intensity, 0) ** Cell.repair_cost_coefficient
         if rate_of_uptake <= 0:
             return 0
         mu = Cell.critical_nutrient_amount / rate_of_uptake
@@ -190,8 +197,11 @@ class Cell:
         if np.random.uniform(0, 1) < self.damage**Cell.damage_survival_dependency:
             self.die(cause="damage")
 
+    def define_if_reproduced(self) -> bool:
+        return np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table()
+
     def reproduce(self, offspring_id: int) -> list:
-        self._has_reproduced = np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table()
+        self._has_reproduced = self.define_if_reproduced()
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
             if np.random.uniform() < self.asymmetry_mutation_rate:
@@ -200,20 +210,20 @@ class Cell:
             if np.random.uniform() < self.repair_mutation_rate:
                 offspring_damage_repair_intensity += np.random.choice([self.repair_mutation_step,
                                                                        -self.repair_mutation_step])
-            res = [Cell(chemostat=self.chemostat,
-                        cell_id=offspring_id,
-                        parent_id=self.id,
-                        asymmetry=offspring_asymmetry,
-                        damage=self.damage * (1 + self.asymmetry) / 2,
-                        damage_repair_intensity=offspring_damage_repair_intensity
-                        ),
-                   Cell(chemostat=self.chemostat,
-                        cell_id=offspring_id + 1,
-                        parent_id=self.id,
-                        asymmetry=offspring_asymmetry,
-                        damage=self.damage * (1 - self.asymmetry) / 2,
-                        damage_repair_intensity=offspring_damage_repair_intensity
-                        ),
+            res = [type(self)(chemostat=self.chemostat,
+                              cell_id=offspring_id,
+                              parent_id=self.id,
+                              asymmetry=offspring_asymmetry,
+                              damage=self.damage * (1 + self.asymmetry) / 2,
+                              damage_repair_intensity=offspring_damage_repair_intensity
+                              ),
+                   type(self)(chemostat=self.chemostat,
+                              cell_id=offspring_id + 1,
+                              parent_id=self.id,
+                              asymmetry=offspring_asymmetry,
+                              damage=self.damage * (1 - self.asymmetry) / 2,
+                              damage_repair_intensity=offspring_damage_repair_intensity
+                              ),
                    ]
             return res
         else:
@@ -301,6 +311,34 @@ class Cell:
     def damage_repair_intensity(self, damage_repair_intensity):
         self._damage_repair_intensity = min(1, max(damage_repair_intensity, 0))
 
+    def __repr__(self):
+        return f"ID: {self.id}, Age: {self.age}, Damage: {self.damage}, " \
+               f"Alive: {not self.has_died}, Reproduced: {self.has_reproduced}"
+
+
+class ExplicitNutrientAccumulationCell(Cell):
+    def __init__(self,
+                 chemostat: Chemostat,
+                 cell_id: int,
+                 parent_id=None,
+                 asymmetry=0.0,
+                 age=0,
+                 damage=0.0, damage_repair_intensity=0.0):
+        super().__init__(chemostat, cell_id, parent_id, asymmetry, age, damage, damage_repair_intensity)
+        self.nutrient = 0
+
+    def accumulate_nutrient(self) -> None:
+        expected_nutrient = self.nutrient_accumulation_rate * \
+                            ((1 - self.damage) ** int(Cell.damage_reproduction_dependency)) / self.chemostat.N
+        self.nutrient += np.random.poisson(expected_nutrient, 1)[0]
+
+    def live(self) -> None:
+        super().live()
+        self.accumulate_nutrient()
+
+    def define_if_reproduced(self) -> bool:
+        return self.nutrient > self.critical_nutrient_amount
+
 
 class Simulation:
     def __init__(self,
@@ -308,10 +346,12 @@ class Simulation:
                  n_starting_cells: int,
                  save_path: str,
                  mode: str,
+                 nutrient_accumulation: str,
                  n_threads: int, n_procs: int,
                  run_name="",
                  write_cells_table=False,
-                 add_runs="", record_history=True):
+                 add_runs="",
+                 record_history=True):
         Cell.damage_repair_mode = parameters["cell_parameters"]["damage_repair_mode"]
         Cell.damage_accumulation_exponential_component = \
             parameters["cell_parameters"]["damage_accumulation_exponential_component"]
@@ -327,10 +367,13 @@ class Simulation:
         Cell.repair_mutation_step = parameters["cell_parameters"]["repair_mutation_step"]
         Cell.repair_mutation_rate = parameters["cell_parameters"]["repair_mutation_rate"]
         Cell.repair_cost_coefficient = parameters["cell_parameters"]["repair_cost_coefficient"]
-
-        Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
-        if mode != "cluster":
-            atexit.register(Cell.archive_lookup_table)
+        if nutrient_accumulation == "explicit":
+            self.cell_class = ExplicitNutrientAccumulationCell
+        else:
+            self.cell_class = Cell
+            Cell.lambda_large_lookup = Cell.load_lookup_table_for_lambda_large()
+            if mode != "cluster":
+                atexit.register(Cell.archive_lookup_table)
         if add_runs:
             run_id = add_runs.rstrip("/").split("/")[-1].split("_")[0]
             max_existing_thread = max([int(file.stem.split("_")[-1]) for file in Path(add_runs).glob("*.sqlite")])
@@ -348,6 +391,7 @@ class Simulation:
                                          chemostat_obj=Chemostat(
                                              volume_val=parameters["chemostat_parameters"]["volume"],
                                              dilution_rate=parameters["chemostat_parameters"]["dilution_rate"],
+                                             cell_class=self.cell_class,
                                              n_cells=n_starting_cells,
                                              asymmetry=parameters["asymmetry"],
                                              damage_repair_intensity=parameters["damage_repair_intensity"]
@@ -420,7 +464,6 @@ class SimulationThread:
             True: Cell.damage_accumulation_linear_component,
             False: 0
         }
-
         if self.mode == "interactive":
             self.drawer = Drawer(self)
 
@@ -442,7 +485,6 @@ class SimulationThread:
         for cell in filterfalse(lambda cell_obj: cell_obj.has_died, self.chemostat.cells):
             offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
             new_cells += cell.reproduce(offspring_id)
-
         # History is recorded
         if self.record_history:
             self.history.record(step_number)
@@ -668,8 +710,10 @@ if __name__ == "__main__":
                              "P(death) = current_damage^damage_survival_dependency; "
                              "0 <= dsd <= inf. "
                              "To get threshold-like dependency set dsd close to 0. To punish even for minimal damage "
-                             "accumulation set dsd to higher values.")
-    parser.add_argument("-drd", "--damage_reproduction_dependency", default=True, type=bool,
+                             "set dsd to higher values.")
+    parser.add_argument("-drd", "--damage_reproduction_dependency",
+                        action=argparse.BooleanOptionalAction,
+                        default=False,
                         help="if True, the expected age of reproduction is inversely proportional to the amount of "
                              "accumulated damage, if False no dependency")
 
@@ -754,11 +798,12 @@ if __name__ == "__main__":
         }
 
     simulation = Simulation(parameters=parameters,
-                            n_starting_cells=1,
+                            n_starting_cells=70,
                             save_path=save_path,
                             n_threads=args.nthreads,
                             n_procs=args.nprocs,
                             mode=args.mode,
+                            nutrient_accumulation="explicit",
                             write_cells_table=args.cells_table,
                             run_name=args.run_name,
                             add_runs=args.add_runs
