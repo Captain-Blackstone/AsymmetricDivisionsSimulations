@@ -17,7 +17,6 @@ import logging
 from itertools import filterfalse
 from collections import Counter
 
-TIME_STEP_DURATION = 1
 PRECISION = 3
 logging.basicConfig(level=logging.INFO)
 
@@ -28,6 +27,8 @@ class Chemostat:
                  dilution_rate: float,
                  cell_class=None,
                  n_cells=None,
+                 n_array_discretization_steps: int = 1001,
+                 starting_nutrient_concentration: float = 0.024293114224133737,
                  asymmetry=0.0,
                  damage_repair_intensity=0.0):
         if cell_class is None:
@@ -36,10 +37,13 @@ class Chemostat:
             self.cell_class = cell_class
         self.V = volume_val
         self.D = dilution_rate
+        self.nutrient_concentration = starting_nutrient_concentration
         self._cells = []
         self._n = 0
         if n_cells:
             self.populate_with_cells(n_cells, asymmetry=asymmetry, damage_repair_intensity=damage_repair_intensity)
+        self.n_array_bins = np.linspace(0, 1, n_array_discretization_steps)
+        self._n_array = None
 
     @property
     def N(self) -> int:
@@ -56,18 +60,52 @@ class Chemostat:
                                         damage_repair_intensity=damage_repair_intensity) for i in range(n_cells)]
         self._n = len(self._cells)
 
-    def dilute(self) -> None:
+    def cells_from_n_array(self):
+        if self.n_array is not None:
+            self.cells = []
+            index = 0
+            for damage_concentration, n_cells in zip(self.n_array_bins, self.n_array):
+                final_index = index+n_cells.round().astype(int)
+                self.cells += [self.cell_class(chemostat=self,
+                                               cell_id=i,
+                                               damage=damage_concentration *
+                                                      ExplicitNutrientAccumulationCell.critical_volume,
+                                               asymmetry=0,
+                                               damage_repair_intensity=0) for i in range(index, final_index)]
+                index = final_index
+            self.n_array = None
+
+    def dilute(self, time_step_duration: float) -> None:
         expected_n_cells_to_remove = self.D * self.N / self.V
-        n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove*TIME_STEP_DURATION, 1)[0]
-        dead_cells = np.random.choice(self.cells, size=min(self.N, n_cells_to_remove), replace=False)
+        n_cells_to_remove = np.random.poisson(expected_n_cells_to_remove * time_step_duration, 1)[0]
+        dead_cells = np.random.choice(list(filterfalse(lambda c: c.has_died, self.cells)), size=min(self.N, n_cells_to_remove), replace=False)
         for cell in dead_cells:
             cell.die(cause="dilution")
-        self._n = len(self._cells)
+        self._n = len(list(filterfalse(lambda c: c.has_died, self.cells)))
+        self.nutrient_concentration += (self.D / self.V) * (1 - self.nutrient_concentration) * time_step_duration
 
     @cells.setter
     def cells(self, cells):
         self._cells = cells
         self._n = len(self._cells)
+
+    def set_n_array(self):
+        if self._n_array is None:
+            self._n_array = np.zeros_like(self.n_array_bins)
+            damage_step = 1 / (len(self.n_array_bins) - 1)
+            np.add.at(self._n_array,
+                      np.digitize([cell.damage_concentration for cell in self.cells], self.n_array_bins + damage_step / 2),
+                      1)
+
+    @property
+    def n_array(self):
+        return self._n_array
+
+    @n_array.setter
+    def n_array(self, n_array: np.array):
+        self._n_array = n_array
+        if n_array is not None:
+            self._n = n_array.sum()
 
 
 class Cell:
@@ -112,6 +150,7 @@ class Cell:
         self._has_reproduced = False
         self._has_died = ""
         self.damage_repair_intensity = damage_repair_intensity
+        self.recently_accumulated_damage = 0
 
     @staticmethod
     def lambda_large(x: float, alpha: float, beta=1.0) -> float:
@@ -131,9 +170,9 @@ class Cell:
         def generate_the_table(lower_alpha: int, higher_alpha: int,
                                lower_x: float, higher_x: float, precision=PRECISION) -> pd.DataFrame:
             logging.info(f"Generating the probability of division lookup table for various critical nutrient amounts. "
-                         f"Please, wait. We have {higher_alpha-lower_alpha} lines to process...")
-            alphas = np.arange(lower_alpha, higher_alpha+1)
-            xx = np.linspace(lower_x, higher_x, (higher_x-lower_x) * (10**precision) + 1)
+                         f"Please, wait. We have {higher_alpha - lower_alpha} lines to process...")
+            alphas = np.arange(lower_alpha, higher_alpha + 1)
+            xx = np.linspace(lower_x, higher_x, (higher_x - lower_x) * (10 ** precision) + 1)
             table = np.zeros((len(alphas), len(xx)))
             for i, alpha in enumerate(alphas):
                 print("|", end="")
@@ -158,7 +197,7 @@ class Cell:
     def add_columns_to_lambda_large_lookup_table(x: float) -> None:
         max_current_x = float(Cell.lambda_large_lookup.columns[-1])
         while max_current_x < x:
-            max_current_x += 1 / (10**PRECISION)
+            max_current_x += 1 / (10 ** PRECISION)
             max_current_x = round(max_current_x, PRECISION)
             Cell.lambda_large_lookup[str(max_current_x)] = \
                 [Cell.lambda_large(max_current_x, alpha) for alpha in Cell.lambda_large_lookup.index]
@@ -172,7 +211,7 @@ class Cell:
         """
         Cell.lambda_large_lookup.to_csv(Cell.lambda_large_lookup_path, sep=",")
 
-    def prob_of_division_from_lookup_table(self) -> float:
+    def prob_of_division_from_lookup_table(self, time_step_duration) -> float:
         rate_of_uptake = ((1 - self.damage) ** int(Cell.damage_reproduction_dependency)) * \
                          Cell.nutrient_accumulation_rate / self.chemostat.N
         rate_of_uptake *= max(1 - self._damage_repair_intensity, 0) ** Cell.repair_cost_coefficient
@@ -183,25 +222,32 @@ class Cell:
         if str(x) not in Cell.lambda_large_lookup.columns:
             Cell.add_columns_to_lambda_large_lookup_table(x)
         lambda_small = Cell.lambda_large_lookup.loc[Cell.critical_nutrient_amount, str(x)] / mu
-        return TIME_STEP_DURATION * lambda_small
+        return time_step_duration * lambda_small
 
-    def live(self) -> None:
-        self._age += 1
-        self.damage += (Cell.damage_accumulation_exponential_component * self._damage
-                        + Cell.damage_accumulation_linear_component) \
-            * TIME_STEP_DURATION
+    def choose_damage_to_accumulate(self, time_step_duration):
+        self.recently_accumulated_damage = (Cell.damage_accumulation_exponential_component * self._damage
+                                            + Cell.damage_accumulation_linear_component) \
+                                           * time_step_duration
+
+    def accumulate_damage(self):
+        self._damage += self.recently_accumulated_damage
+
+    def live(self, time_step_duration: float) -> None:
+        self._age += time_step_duration
+        self.accumulate_damage()
         if Cell.damage_repair_mode == "multiplicative":
-            self.damage *= 1 - self._damage_repair_intensity
+            self.damage *= 1 - self._damage_repair_intensity  # TODO
         elif Cell.damage_repair_mode == "additive":
-            self.damage -= self.damage_repair_intensity * TIME_STEP_DURATION
-        if np.random.uniform(0, 1) < self.damage**Cell.damage_survival_dependency:
+            self.damage -= self.damage_repair_intensity * time_step_duration
+        if np.random.uniform(0, 1) < time_step_duration * (
+                self.damage / (1 - self.damage)) ** Cell.damage_survival_dependency:
             self.die(cause="damage")
 
-    def define_if_reproduced(self) -> bool:
-        return np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table()
+    def define_if_reproduced(self, time_step_duration: float) -> bool:
+        return np.random.uniform(0, 1) < self.prob_of_division_from_lookup_table(time_step_duration)
 
-    def reproduce(self, offspring_id: int) -> list:
-        self._has_reproduced = self.define_if_reproduced()
+    def reproduce(self, offspring_id: int, time_step_duration: float) -> list:
+        self._has_reproduced = self.define_if_reproduced(time_step_duration)
         if self.has_reproduced:
             offspring_asymmetry = self.asymmetry
             if np.random.uniform() < self.asymmetry_mutation_rate:
@@ -225,10 +271,9 @@ class Cell:
                               damage_repair_intensity=offspring_damage_repair_intensity
                               ),
                    ]
-            return res
         else:
             res = [self]
-            return res
+        return res
 
     def die(self, cause: str) -> None:
         self._has_died = cause
@@ -317,6 +362,9 @@ class Cell:
 
 
 class ExplicitNutrientAccumulationCell(Cell):
+    nutrient_to_volume_scaling_factor = 100
+    critical_volume = Cell.critical_nutrient_amount * nutrient_to_volume_scaling_factor
+
     def __init__(self,
                  chemostat: Chemostat,
                  cell_id: int,
@@ -325,19 +373,48 @@ class ExplicitNutrientAccumulationCell(Cell):
                  age=0,
                  damage=0.0, damage_repair_intensity=0.0):
         super().__init__(chemostat, cell_id, parent_id, asymmetry, age, damage, damage_repair_intensity)
-        self.nutrient = 0
+        self.nutrient = Cell.critical_nutrient_amount
+        self.recently_accumulated_nutrient = 0
 
-    def accumulate_nutrient(self) -> None:
-        expected_nutrient = self.nutrient_accumulation_rate * \
-                            ((1 - self.damage) ** int(Cell.damage_reproduction_dependency)) / self.chemostat.N
-        self.nutrient += np.random.poisson(expected_nutrient, 1)[0]
+    def choose_damage_to_accumulate(self, time_step_duration):
+        self.recently_accumulated_damage = (Cell.damage_accumulation_exponential_component * self._damage
+                                            + Cell.damage_accumulation_linear_component) * self.volume \
+                                           * time_step_duration
 
-    def live(self) -> None:
-        super().live()
+    def choose_nutrient_to_accumulate(self, time_step_duration: float) -> None:
+        expected_nutrient = self.volume * self.chemostat.nutrient_concentration * self.nutrient_accumulation_rate * \
+                            ((1 - self.damage) ** int(Cell.damage_reproduction_dependency)) * time_step_duration
+        self.recently_accumulated_nutrient = expected_nutrient
+        # self.recently_accumulated_nutrient = np.random.poisson(expected_nutrient, 1)[0]
+        # self.nutrient += np.random.poisson(expected_nutrient, 1)[0]
+
+    def accumulate_nutrient(self):
+        self.nutrient += self.recently_accumulated_nutrient
+
+    def live(self, time_step_duration: float) -> None:
+        self._age += time_step_duration
         self.accumulate_nutrient()
+        self.accumulate_damage()
+        if Cell.damage_repair_mode == "multiplicative":
+            self.damage *= 1 - self._damage_repair_intensity  # TODO: time_step_duration
+        elif Cell.damage_repair_mode == "additive":
+            self.damage -= self.damage_repair_intensity * time_step_duration
 
-    def define_if_reproduced(self) -> bool:
-        return self.nutrient > self.critical_nutrient_amount
+        # -rho/(1-rho) * n * delta_t
+        if np.random.uniform(0, 1) < time_step_duration * (
+                self.damage_concentration / (1 - self.damage_concentration)) ** Cell.damage_survival_dependency:
+            self.die(cause="damage")
+
+    def define_if_reproduced(self, time_step_duration: float) -> bool:
+        return self.volume >= self.critical_volume * 2
+
+    @property
+    def damage_concentration(self) -> float:
+        return self.damage / self.volume
+
+    @property
+    def volume(self):
+        return self.nutrient * self.nutrient_to_volume_scaling_factor
 
 
 class Simulation:
@@ -439,9 +516,13 @@ class SimulationThread:
                  save_path: str,
                  mode: str,
                  write_cells_table: bool,
+                 deterministic_threshold: int = 3000,
                  record_history=True):
         self.mode = mode
         self.chemostat = chemostat_obj
+        self.deterministic_threshold = deterministic_threshold
+        self.time_step_duration = 0.0001
+        self.delta_time_step = 0.1
 
         # Changing environment parameters
         if changing_environment_prob == 0:
@@ -457,16 +538,19 @@ class SimulationThread:
             if harsh_environment_frac in [0, 1]:
                 raise ValueError(f"If harsh_environment_frac == {harsh_environment_frac}, "
                                  f"changing_environment_prob should be 0")
-            self.environment_switch_probs = [changing_environment_prob/(2*(1-harsh_environment_frac)),
-                                             changing_environment_prob/(2*harsh_environment_frac)]
+            self.environment_switch_probs = [changing_environment_prob / (2 * (1 - harsh_environment_frac)),
+                                             changing_environment_prob / (2 * harsh_environment_frac)]
             self.current_environment = True
         self.changing_environment_val = {
             True: Cell.damage_accumulation_linear_component,
             False: 0
         }
+
+        # Drawing
         if self.mode == "interactive":
             self.drawer = Drawer(self)
 
+        # History
         self.record_history = record_history
         if self.record_history:
             self.history = History(self,
@@ -476,15 +560,62 @@ class SimulationThread:
                                    thread_id=thread_id,
                                    write_cells_table=write_cells_table)
 
-    def step(self, step_number: int) -> None:
+        # Analytic Solution Parameters
+        self.analytic_solution_parameters = dict(
+            cell_growth_rate=Cell.nutrient_accumulation_rate *
+                             ExplicitNutrientAccumulationCell.nutrient_to_volume_scaling_factor,
+            dilution_rate=self.chemostat.D / self.chemostat.V,
+            nutrient_acquisition_rate=Cell.nutrient_accumulation_rate *
+                                      ExplicitNutrientAccumulationCell.nutrient_to_volume_scaling_factor *
+                                      Cell.critical_nutrient_amount / self.chemostat.V,
+            damage_accumulation_rate=Cell.damage_accumulation_linear_component)
+        self.time = 0
+        print(self.analytic_solution_parameters)
+
+    def do_stochastic_step(self, step_number):
+        if self.chemostat.cell_class == ExplicitNutrientAccumulationCell:
+            accept_step = False
+            increase_time_step = random.uniform(0, 1) < 0.01
+        else:
+            accept_step = True
+            increase_time_step = False
+        while not accept_step:
+            accept_step = True
+            for cell in self.chemostat.cells:
+                cell.choose_nutrient_to_accumulate(self.time_step_duration)
+                cell.choose_damage_to_accumulate(self.time_step_duration)
+            suggested_damage_concentrations = [(cell.damage + cell.recently_accumulated_damage) /
+                                               ((cell.nutrient + cell.recently_accumulated_nutrient)*cell.nutrient_to_volume_scaling_factor) for cell in self.chemostat.cells]
+
+            if any([dc > 1 for dc in suggested_damage_concentrations]):
+                print(1)
+            if any([dc / (1 - dc) * self.time_step_duration > 1 for dc in suggested_damage_concentrations]):
+                print([dc / (1 - dc) * self.time_step_duration for dc in suggested_damage_concentrations])
+            if sum([cell.recently_accumulated_nutrient for cell in self.chemostat.cells]) / self.chemostat.V > self.chemostat.nutrient_concentration:
+                print(3, self.chemostat.N, self.time_step_duration)
+            if any([dc > 1 for dc in suggested_damage_concentrations]) or \
+                    any([dc / (1 - dc) * self.time_step_duration > 1 for dc in suggested_damage_concentrations]) or \
+                    sum([cell.recently_accumulated_nutrient for cell in self.chemostat.cells]) / self.chemostat.V > self.chemostat.nutrient_concentration:
+                accept_step = False
+                increase_time_step = False
+                self.time_step_duration -= self.time_step_duration * self.delta_time_step
+
+        # Time passes
+        for cell in self.chemostat.cells:
+            cell.live(self.time_step_duration)
+        self.chemostat.nutrient_concentration -= sum([cell.recently_accumulated_nutrient
+                                                      for cell in self.chemostat.cells]) / self.chemostat.V
+        # print(self.chemostat.nutrient_concentration, self.chemostat.N)
+
         # Cells are diluted
-        self.chemostat.dilute()
+        self.chemostat.dilute(self.time_step_duration)
 
         # Alive cells reproduce
         new_cells = []
         for cell in filterfalse(lambda cell_obj: cell_obj.has_died, self.chemostat.cells):
             offspring_id = max([cell.id for cell in self.chemostat.cells] + [cell.id for cell in new_cells]) + 1
-            new_cells += cell.reproduce(offspring_id)
+            new_cells += cell.reproduce(offspring_id, self.time_step_duration)
+
         # History is recorded
         if self.record_history:
             self.history.record(step_number)
@@ -492,12 +623,62 @@ class SimulationThread:
         # Move to the next time step
         self.chemostat.cells = new_cells
 
-        # Time passes
-        for cell in self.chemostat.cells:
-            cell.live()
-
         # Switch environment
         self._change_environment()
+
+        if increase_time_step:
+            self.time_step_duration += self.time_step_duration * self.delta_time_step
+
+    def do_deterministic_step(self, step_number: int):
+        proposed_new_phi, accept_step = DeterministicSimulationToolbox.update_phi(
+            phi=self.chemostat.nutrient_concentration,
+            n_array=self.chemostat.n_array,
+            dilution_rate=self.analytic_solution_parameters["dilution_rate"],
+            nutrient_acquisition_rate=self.analytic_solution_parameters["nutrient_acquisition_rate"],
+            delta_t=self.time_step_duration)
+        n_array, accept_step = DeterministicSimulationToolbox.die(
+            n_array=self.chemostat.n_array.copy(),
+            rhos=self.chemostat.n_array_bins,
+            dilution_rate=self.analytic_solution_parameters["dilution_rate"],
+            delta_t=self.time_step_duration, run=accept_step)
+
+        n_array, accept_step = DeterministicSimulationToolbox.reproduce(
+            n_array=n_array,
+            rhos=self.chemostat.n_array_bins,
+            phi=proposed_new_phi,
+            cell_growth_rate=self.analytic_solution_parameters["cell_growth_rate"],
+            asymmetry=0,  # TODO: do it separately for different asymmetries
+            delta_t=self.time_step_duration, run=accept_step)
+        n_array, accept_step = DeterministicSimulationToolbox.accumulate_damage(
+            n_array=n_array,
+            rhos=self.chemostat.n_array_bins,
+            phi=proposed_new_phi,
+            damage_accumulation_rate=self.analytic_solution_parameters["damage_accumulation_rate"],
+            cell_growth_rate=self.analytic_solution_parameters["cell_growth_rate"],
+            delta_t=self.time_step_duration, run=accept_step)
+        if accept_step:
+            self.chemostat.n_array = n_array
+            self.chemostat.nutrient_concentration = proposed_new_phi
+            self.history.record(step_number, stochastic=False)
+            # print('accept', self.time_step_duration)
+            if random.uniform(0, 1)  < 0.01:
+                self.time_step_duration += self.time_step_duration * self.delta_time_step
+        else:
+            # print('reject', self.time_step_duration)
+            self.time_step_duration -= self.time_step_duration * self.delta_time_step
+
+    def step(self, step_number: int) -> None:
+        if self.chemostat.N > self.deterministic_threshold:
+            # print("deterministic", self.chemostat.N)
+            self.chemostat.set_n_array()
+            self.do_deterministic_step(step_number)
+        else:
+            # print("stochastic", self.chemostat.N)
+            self.chemostat.cells_from_n_array()
+            self.do_stochastic_step(step_number)
+        self.time += self.time_step_duration
+        print(self.time, self.chemostat.N)
+
 
     def run(self, n_steps: int) -> None:
         np.random.seed((os.getpid() * int(datetime.datetime.now().timestamp()) % 123456789))
@@ -509,7 +690,7 @@ class SimulationThread:
         for step_number in iterator:
             self.step(step_number)
             if self.mode == "interactive":
-                self.drawer.draw_step(step_number)
+                self.drawer.draw_step(step_number, self.time_step_duration)
             if self.chemostat.N == 0:
                 logging.info("The population died out.")
                 break
@@ -522,6 +703,102 @@ class SimulationThread:
                 and random.uniform(0, 1) < self.environment_switch_probs[int(self.current_environment)]:
             self.current_environment = not self.current_environment
             Cell.damage_accumulation_linear_component = self.changing_environment_val[self.current_environment]
+
+
+class Derivative:
+    @staticmethod
+    def phi(n: float,
+            current_phi: float,
+            dilution_rate: float,
+            nutrient_acquisition_rate: float) -> float:
+        nutrient_influx = dilution_rate * (1 - current_phi)
+        nutrient_acquisition = nutrient_acquisition_rate * n * current_phi
+        return nutrient_influx - nutrient_acquisition
+
+    @staticmethod
+    def rho(rho_vector: np.array,
+            current_phi: float,
+            damage_accumulation_rate: float,
+            cell_growth_rate: float) -> float:
+        damage_accumulation = damage_accumulation_rate
+        damage_dilution = cell_growth_rate * current_phi * rho_vector
+        return damage_accumulation - damage_dilution
+
+
+class DeterministicSimulationToolbox:
+    @staticmethod
+    def update_phi(phi: float,
+                   n_array: np.array,
+                   dilution_rate: float,
+                   nutrient_acquisition_rate: float,
+                   delta_t: float) -> (float, bool):
+        accept_step = True
+        proposed_new_phi = phi + Derivative.phi(n_array.sum(), phi, dilution_rate, nutrient_acquisition_rate) * delta_t
+        if proposed_new_phi < 0:
+            accept_step = False
+        return proposed_new_phi, accept_step
+
+    @classmethod
+    def _death_func(cls, n_array: float, rhos: np.array, dilution_rate: float) -> float:
+        return np.divide(n_array * rhos, 1 - rhos,
+                         out=n_array * (1 - dilution_rate),
+                         where=rhos != 1) + dilution_rate * n_array
+
+    @staticmethod
+    def die(n_array: np.array, rhos: np.array, dilution_rate: float, delta_t: float, run: bool) -> (np.array, bool):
+        if not run:
+            return None, False
+        accept_step = True
+        dead = DeterministicSimulationToolbox._death_func(n_array, rhos, dilution_rate) * delta_t
+        if (dead > n_array).sum() > 0:
+            accept_step = False
+        return n_array - dead, accept_step
+
+    @staticmethod
+    def accumulate_damage(n_array: np.array,
+                          rhos: np.array,
+                          phi: float,
+                          damage_accumulation_rate: float,
+                          cell_growth_rate: float,
+                          delta_t: float, run: bool) -> (np.array, bool):
+        if not run:
+            return None, False
+        new_n_array = np.zeros_like(n_array)
+        damage_step = 1 / (len(rhos) - 1)
+        increment = Derivative.rho(rho_vector=rhos,
+                                   current_phi=phi,
+                                   damage_accumulation_rate=damage_accumulation_rate,
+                                   cell_growth_rate=cell_growth_rate) * delta_t
+        if (np.abs(increment) > damage_step).sum() > 0:
+            return None, False
+        those_that_accumulate = n_array * abs(increment) / damage_step
+        indices = (np.arange(len(n_array)) + increment / abs(increment)).round().astype(int)
+        np.add.at(new_n_array,
+                  indices[(0 <= indices) & (indices < len(n_array))],
+                  those_that_accumulate[(0 <= indices) & (indices < len(n_array))])
+        new_n_array += n_array - those_that_accumulate
+        return new_n_array, True
+
+    @staticmethod
+    def reproduce(n_array: np.array,
+                  rhos: np.array,
+                  phi: float,
+                  cell_growth_rate: float,
+                  asymmetry: float,
+                  delta_t: float, run: bool) -> (np.array, bool):
+        if not run:
+            return None, False
+        division_rate = cell_growth_rate * phi
+        if division_rate * delta_t > 1:
+            return None, False
+
+        new_n_array = np.zeros_like(n_array)
+        for new_rho_vector in [rhos * (1 + asymmetry), rhos * (1 - asymmetry)]:
+            indices = (new_rho_vector * (len(n_array) - 1)).round().astype(int)
+            np.add.at(new_n_array, indices[(0 <= indices) & (indices < len(n_array))], n_array[
+                (0 <= indices) & (indices < len(n_array))] * division_rate * delta_t)
+        new_n_array += n_array * (1 - division_rate * delta_t)
+        return new_n_array, True
 
 
 class History:
@@ -608,18 +885,31 @@ class History:
     def reset(self) -> None:
         self.history_table, self.cells_table, self.genealogy_table = [], [], []
 
-    def record(self, time_step) -> None:
+    def record(self, time_step, stochastic=True) -> None:
         # Make a record history_table
-        row = pd.DataFrame.from_dict(
-            {"time_step": [time_step],
-             "n_cells": [self.simulation_thread.chemostat.N],
-             "mean_asymmetry": [np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()],
-             "mean_damage": [np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()],
-             "mean_repair": [np.array([cell.damage_repair_intensity
-                                       for cell in self.simulation_thread.chemostat.cells]).mean()],
-             "environment": self.simulation_thread.current_environment
-             }
-        )
+        if stochastic:
+            row = pd.DataFrame.from_dict(
+                {"time_step": [time_step],
+                 "n_cells": [self.simulation_thread.chemostat.N],
+                 "mean_asymmetry": [np.array([cell.asymmetry for cell in self.simulation_thread.chemostat.cells]).mean()],
+                 "mean_damage": [np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()],
+                 "mean_repair": [np.array([cell.damage_repair_intensity
+                                           for cell in self.simulation_thread.chemostat.cells]).mean()],
+                 "environment": self.simulation_thread.current_environment
+                 }
+            )
+        else:
+            row = pd.DataFrame.from_dict(
+                {"time_step": [time_step],
+                 "n_cells": [len(self.simulation_thread.chemostat.n_array)],
+                 "mean_asymmetry": [0],
+                 "mean_damage": (self.simulation_thread.chemostat.n_array*
+                                 self.simulation_thread.chemostat.n_array_bins).sum() /
+                    self.simulation_thread.chemostat.n_array.sum(),
+                 "mean_repair": [0],
+                 "environment": [0]
+                 }
+            )
 
         self.history_table.append(row)
 
@@ -750,6 +1040,7 @@ if __name__ == "__main__":
     if args.mode in ["local", "interactive"]:
         from tqdm import tqdm
         import multiprocessing
+
         save_path = "../data/local_experiments"
         if args.mode == "interactive":
             from interactive_mode import Drawer
@@ -798,7 +1089,7 @@ if __name__ == "__main__":
         }
 
     simulation = Simulation(parameters=parameters,
-                            n_starting_cells=70,
+                            n_starting_cells=1,
                             save_path=save_path,
                             n_threads=args.nthreads,
                             n_procs=args.nprocs,

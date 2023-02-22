@@ -4,6 +4,7 @@ import numpy as np
 import atexit
 from itertools import chain
 
+
 def non_blocking_pause(interval):
     backend = plt.rcParams['backend']
     if backend in matplotlib.rcsetup.interactive_bk:
@@ -22,11 +23,12 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation_thread = simulation_thread
-        self.update_time = 400  # number of steps between figure updates
-        self.resolution = 40  # number of steps between data collection events
-        self.plot_how_many = 250  # number of points present on the plot at each time point
+        self.update_time = 10  # number of steps between figure updates
+        self.resolution = 1  # number of steps between data collection events
+        self.plot_how_many = 25000  # number of points present on the plot at each time point
+        self.timeline = []
         plt.ion()
-        n_plots = 1
+        n_plots = 2
         damage_plot = False
         if self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component > 0 or \
                 self.simulation_thread.chemostat.cells[0].damage_accumulation_exponential_component > 0 or \
@@ -52,18 +54,22 @@ class Drawer:
         line_data_dicts = [
             {"ax_num": 0, "color": "blue", "alpha": 1, "label": "Population size",
              "update_function": lambda: self.simulation_thread.chemostat.N},
-            {"ax_num": 1, "color": "grey", "alpha": 1, "label": "Mean damage",
+            {"ax_num": 1, "color": "green", "alpha": 1, "label": "Mean damage",
              "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).mean()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 1, "color": "grey", "alpha": 0.5,
+                 lambda: self.damage_update_func() if self.simulation_thread.chemostat.N else 0},
+            # {"ax_num": 1, "color": "green", "alpha": 0.5,
+            #  "update_function":
+            #      lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
+            #       if self.simulation_thread.chemostat.N else 0},
+            # {"ax_num": 1, "color": "green", "alpha": 0.5,
+            #  "update_function":
+            #      lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
+            #      if self.simulation_thread.chemostat.N else 0},
+            {"ax_num": 2, "color": "orange", "alpha": 1, "label": "Nutrient concentration",
              "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": 1, "color": "grey", "alpha": 0.5,
-             "update_function":
-                 lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).min()
-                 if self.simulation_thread.chemostat.N else 0}]
+                 lambda: self.simulation_thread.chemostat.nutrient_concentration},
+
+        ]
         frequency_data_dicts = [
             {"ax_num": int(n_plots + damage_plot), "color": "green", "label": "Asymmetry", "max": 1,
              "update_function":
@@ -99,18 +105,26 @@ class Drawer:
         ])
         plt.get_current_fig_manager().full_screen_toggle()
 
-    def draw_step(self, step_number):
+    def damage_update_func(self):
+        if self.simulation_thread.chemostat.n_array is None:
+            return np.array([cell.damage_concentration for cell in self.simulation_thread.chemostat.cells]).mean()
+        else:
+            res = (self.simulation_thread.chemostat.n_array * self.simulation_thread.chemostat.n_array_bins).sum()/self.simulation_thread.chemostat.n_array.sum()
+            return res
+
+    def draw_step(self, step_number: int, time_step_duration: float) -> None:
         """
         Update all the Plots of the Drawer.
         Update the data only each resolution time_step,
         Update the plot only each update_time time_step.
         :param step_number:
+        :param time_step_duration:
         :return:
         """
         # Collect data each self.resolution steps
         if step_number % self.resolution == 0:
             for plot in self.plots:
-                plot.collect_data(step_number)
+                plot.collect_data(time_step_duration)
         # Update figure each self.update_time steps
         if step_number % self.update_time == 0:
             for plot in self.plots:
@@ -138,14 +152,17 @@ class Plot:
         if ylabel is not None:
             self.ax.set_ylabel(ylabel, fontsize=10)
 
-    def collect_data(self, step_num: int):
+    def collect_data(self, time_step_duration: float) -> None:
         """
         Update ydata list.
         ydata is updated by calling update_function of the object.
-        :param step_num:
+        :param time_step_duration:
         :return:
         """
-        self.xdata.append(step_num)
+        if self.xdata:
+            self.xdata.append(self.xdata[-1] + time_step_duration)
+        else:
+            self.xdata.append(time_step_duration)
         self.xdata = self.xdata[-self.plot_how_many:]
         self.ydata.append(self.update_function())
         self.ydata = self.ydata[-self.plot_how_many:]
@@ -173,7 +190,6 @@ class LinePlot(Plot):
         super().__init__(drawer, plot_how_many, ax, color, update_function, ylabel)
         self.alpha = alpha
         self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
-
 
     def update_data(self):
         """
