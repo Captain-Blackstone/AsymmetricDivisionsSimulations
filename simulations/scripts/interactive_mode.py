@@ -23,27 +23,27 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation_thread = simulation_thread
-        self.update_time = 10  # number of steps between figure updates
-        self.resolution = 1  # number of steps between data collection events
-        self.plot_how_many = 25000  # number of points present on the plot at each time point
+        self.update_time = 100  # number of steps between figure updates
+        self.resolution = 10  # number of steps between data collection events
+        self.plot_how_many = 1000  # number of points present on the plot at each time point
         self.timeline = []
         plt.ion()
         n_plots = 2
         damage_plot = False
-        if self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component > 0 or \
-                self.simulation_thread.chemostat.cells[0].damage_accumulation_exponential_component > 0 or \
-                len(set([cell.damage for cell in self.simulation_thread.chemostat.cells])) > 1:
+        if self.simulation_thread.discrete_simulation.chemostat.cells[0].damage_accumulation_linear_component > 0 or \
+                self.simulation_thread.discrete_simulation.chemostat.cells[0].damage_accumulation_exponential_component > 0 or \
+                len(set([cell.damage for cell in self.simulation_thread.discrete_simulation.chemostat.cells])) > 1:
             damage_plot = True
 
         asymmetry_plot = False
-        if self.simulation_thread.chemostat.cells[0].asymmetry_mutation_rate > 0 and \
-                self.simulation_thread.chemostat.cells[0].asymmetry_mutation_step > 0 or \
-                len(set([cell.asymmetry for cell in self.simulation_thread.chemostat.cells])) > 1:
+        if self.simulation_thread.discrete_simulation.chemostat.cells[0].asymmetry_mutation_rate > 0 and \
+                self.simulation_thread.discrete_simulation.chemostat.cells[0].asymmetry_mutation_step > 0 or \
+                len(set([cell.asymmetry for cell in self.simulation_thread.discrete_simulation.chemostat.cells])) > 1:
             asymmetry_plot = True
         repair_plot = False
-        if self.simulation_thread.chemostat.cells[0].repair_mutation_rate > 0 and \
-                self.simulation_thread.chemostat.cells[0].repair_mutation_step > 0 or \
-                len(set([cell.damage_repair_intensity for cell in self.simulation_thread.chemostat.cells])) > 1:
+        if self.simulation_thread.discrete_simulation.chemostat.cells[0].repair_mutation_rate > 0 and \
+                self.simulation_thread.discrete_simulation.chemostat.cells[0].repair_mutation_step > 0 or \
+                len(set([cell.damage_repair_intensity for cell in self.simulation_thread.discrete_simulation.chemostat.cells])) > 1:
             repair_plot = True
 
         self.fig, self.ax = plt.subplots(n_plots + damage_plot + asymmetry_plot + repair_plot, 1)
@@ -53,10 +53,10 @@ class Drawer:
         atexit.register(plt.close)
         line_data_dicts = [
             {"ax_num": 0, "color": "blue", "alpha": 1, "label": "Population size",
-             "update_function": lambda: self.simulation_thread.chemostat.N},
+             "update_function": lambda: self.simulation_thread.current_population_size},
             {"ax_num": 1, "color": "green", "alpha": 1, "label": "Mean damage",
              "update_function":
-                 lambda: self.damage_update_func() if self.simulation_thread.chemostat.N else 0},
+                 lambda: self.damage_update_func() if self.simulation_thread.current_population_size else 0},
             # {"ax_num": 1, "color": "green", "alpha": 0.5,
             #  "update_function":
             #      lambda: np.array([cell.damage for cell in self.simulation_thread.chemostat.cells]).max()
@@ -67,50 +67,49 @@ class Drawer:
             #      if self.simulation_thread.chemostat.N else 0},
             {"ax_num": 2, "color": "orange", "alpha": 1, "label": "Nutrient concentration",
              "update_function":
-                 lambda: self.simulation_thread.chemostat.nutrient_concentration},
+                 lambda: self.simulation_thread.discrete_simulation.chemostat.nutrient_concentration if
+             self.simulation_thread.current_simulation is self.simulation_thread.discrete_simulation else
+             self.simulation_thread.continuous_simulation.phi
+             },
 
         ]
-        frequency_data_dicts = [
-            {"ax_num": int(n_plots + damage_plot), "color": "green", "label": "Asymmetry", "max": 1,
-             "update_function":
-                 lambda: np.array([round(cell.asymmetry, 5) for cell in self.simulation_thread.chemostat.cells])
-                 if self.simulation_thread.chemostat.N else 0},
-            {"ax_num": int(n_plots + damage_plot + asymmetry_plot), "color": "red", "label": "Repair",
-             "max": self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component,
-             "update_function":
-                 lambda: np.array([round(cell.damage_repair_intensity, 24)
-                                   for cell in self.simulation_thread.chemostat.cells])
-                 if self.simulation_thread.chemostat.N else 0}
-        ]
+        # frequency_data_dicts = [
+        #     {"ax_num": int(n_plots + damage_plot), "color": "green", "label": "Asymmetry", "max": 1,
+        #      "update_function":
+        #          lambda: np.array([round(cell.asymmetry, 5) for cell in self.simulation_thread.chemostat.cells])
+        #          if self.simulation_thread.chemostat.N else 0},
+        #     {"ax_num": int(n_plots + damage_plot + asymmetry_plot), "color": "red", "label": "Repair",
+        #      "max": self.simulation_thread.chemostat.cells[0].damage_accumulation_linear_component,
+        #      "update_function":
+        #          lambda: np.array([round(cell.damage_repair_intensity, 24)
+        #                            for cell in self.simulation_thread.chemostat.cells])
+        #          if self.simulation_thread.chemostat.N else 0}
+        # ]
         if not damage_plot:
             line_data_dicts = line_data_dicts[:1]
-        if not repair_plot:
-            frequency_data_dicts.pop(1)
-        if not asymmetry_plot:
-            frequency_data_dicts.pop(0)
+        # if not repair_plot:
+        #     frequency_data_dicts.pop(1)
+        # if not asymmetry_plot:
+        #     frequency_data_dicts.pop(0)
         self.plots = [LinePlot(self,
                            self.plot_how_many,
                            self.ax[data_dict["ax_num"]],
                            data_dict["color"],
                            data_dict["alpha"],
                            data_dict["update_function"], data_dict.get("label")) for data_dict in line_data_dicts]
-        self.plots.extend([
-            FrequencyPlot(self,
-                     self.plot_how_many,
-                     self.ax[data_dict["ax_num"]],
-                     data_dict["color"],
-                     data_dict["label"],
-                     data_dict["max"],
-                     data_dict["update_function"]) for data_dict in frequency_data_dicts
-        ])
+        # self.plots.extend([
+        #     FrequencyPlot(self,
+        #              self.plot_how_many,
+        #              self.ax[data_dict["ax_num"]],
+        #              data_dict["color"],
+        #              data_dict["label"],
+        #              data_dict["max"],
+        #              data_dict["update_function"]) for data_dict in frequency_data_dicts
+        # ])
         plt.get_current_fig_manager().full_screen_toggle()
 
     def damage_update_func(self):
-        if self.simulation_thread.chemostat.n_array is None:
-            return np.array([cell.damage_concentration for cell in self.simulation_thread.chemostat.cells]).mean()
-        else:
-            res = (self.simulation_thread.chemostat.n_array * self.simulation_thread.chemostat.n_array_bins).sum()/self.simulation_thread.chemostat.n_array.sum()
-            return res
+        return self.simulation_thread.current_simulation.mean_damage_concentration
 
     def draw_step(self, step_number: int, time_step_duration: float) -> None:
         """
@@ -164,6 +163,8 @@ class Plot:
         else:
             self.xdata.append(time_step_duration)
         self.xdata = self.xdata[-self.plot_how_many:]
+        # self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array
+        # self.xdata = list(np.arange(len(self.ydata)-1))
         self.ydata.append(self.update_function())
         self.ydata = self.ydata[-self.plot_how_many:]
 
