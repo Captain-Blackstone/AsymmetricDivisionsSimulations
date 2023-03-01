@@ -11,7 +11,8 @@ dataframes = {
     "linear_da_lower_cost":
         "../../selection_coefficients/linear_da_lower_cost/linear_da_lower_cost_selection_coefficients_raw_data.tsv",
     "linear_da_max_cost_at_1":
-        "../../selection_coefficients/linear_da_max_cost_at_1/linear_da_max_cost_at_1_raw_data.tsv"
+        "../../selection_coefficients/linear_da_max_cost_at_1/linear_da_max_cost_at_1_raw_data.tsv",
+    "exponential_da": "../../selection_coefficients/exponential_da/exponential_da_selection_coefficients_raw_data.tsv"
 }
 
 params = {
@@ -49,7 +50,7 @@ class Landscape:
     def get_population_sizes_from_df(self) -> pd.DataFrame:
         population_size_df = self.df.loc[(self.df.population_start != "None") &
                                          (self.df.population_start.notna())].copy()
-        population_size_df.loc["population_start"] = population_size_df.population_start.astype(int)
+        population_size_df["population_start"] = population_size_df.population_start.astype(int)
         return population_size_df.groupby(["wt_a", "wt_r"]).aggregate("population_start").mean()
 
     def get_fixation_probability_dict(self):
@@ -112,7 +113,7 @@ class Landscape:
             try:
                 weight2 = self.graph[v][u]['weight']
             except KeyError:
-                resulting_colors.append("red")
+                self.graph[u][v]["color"] = "red"
                 continue
             current_color = colors[0]
             for color, bound in zip(colors, bounds):
@@ -131,13 +132,12 @@ class Landscape:
                     sizes.append(self.population_sizes[(a, r)])
                 else:
                     sizes.append(0)
-
         nx.draw(self.graph,
                 pos={node: (int(node.split("_")[0]), int(node.split("_")[1])) for node in self.graph.nodes},
                 width=[(self.graph[u][v]['weight'])*10 for u, v in self.graph.edges],
                 connectionstyle="arc3,rad=0.1",
                 edge_color=[(self.graph[u][v]['color']) for u, v in self.graph.edges],
-                node_size=[s*5 for s in sizes],
+                node_size=np.array([300*s for s in sizes])/max(sizes),
                 ax=ax)
 
         ax.set_xlabel("asymmetry", fontsize=15)
@@ -152,6 +152,6 @@ class Landscape:
 
 
 if __name__ == "__main__":
-    landscape = Landscape(df_path=dataframes["linear_da_lower_cost"])
+    landscape = Landscape(df_path=dataframes["exponential_da"])
     landscape.draw_graph()
     plt.show()

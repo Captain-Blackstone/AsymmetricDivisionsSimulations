@@ -12,7 +12,7 @@ params = {
     },
     "repair": {
         "min": 0,
-        "max": 1e-6,
+        "max": 12e-7,
         "mutation_step": 1e-7
     }
 }
@@ -54,16 +54,16 @@ class TimelessSimulation:
 
     def draw_adaptive_peak(self, save_path: str) -> None:
         fig, ax = plt.subplots(figsize=(6, 6))
-        mtx = np.zeros((11, 11))
+        mtx = np.zeros((len(REPAIRS), len(ASYMMETRIES)))
         end_positions = [walk.positions[-1] for walk in self.instances]
         for e in end_positions:
-            mtx[10 - e[1], e[0]] += 1
+            mtx[len(REPAIRS) - 1 - e[1], e[0]] += 1
         mtx /= mtx.sum()
         mtx = mtx ** 0.3
         plt.imshow(mtx)
-        ax.set_xticks(range(11))
+        ax.set_xticks(range(len(ASYMMETRIES)))
         ax.set_xticklabels(ASYMMETRIES)
-        ax.set_yticks(range(11))
+        ax.set_yticks(range(len(REPAIRS)))
         ax.set_yticklabels(REPAIRS[::-1])
         ax.set_xlabel("asymmetry")
         ax.set_ylabel("repair")
@@ -72,9 +72,9 @@ class TimelessSimulation:
     def walk_visualization_video(self, save_path):
         fig = plt.figure()
         ax = plt.axes(xlim=(-0.5, 10.5), ylim=(-0.5, 10.5))
-        ax.set_xticks(range(11))
+        ax.set_xticks(np.linspace(0, 10, len(ASYMMETRIES)))
         ax.set_xticklabels(ASYMMETRIES)
-        ax.set_yticks(range(11))
+        ax.set_yticks(np.linspace(0, 10, len(REPAIRS)))
         ax.set_yticklabels(REPAIRS)
         ax.set_xlabel("asymmetry")
         ax.set_ylabel("repair")
@@ -83,12 +83,12 @@ class TimelessSimulation:
         im = plt.imshow(a, interpolation='none')
 
         def init_func():
-            im.set_data(np.zeros((11, 11)).astype(int))
+            im.set_data(np.zeros((len(REPAIRS), len(ASYMMETRIES))).astype(int))
             return [im]
 
         def animate(i):
             points = [walk.positions[i] for walk in self.instances]
-            mtx = np.zeros((11, 11))
+            mtx = np.zeros((len(REPAIRS), len(ASYMMETRIES)))
             for point in points:
                 mtx[point[1], point[0]] += 1
             mtx /= mtx.sum()
@@ -106,9 +106,9 @@ class TimelessSimulation:
 if __name__ == "__main__":
     from Selection_landscape import dataframes
     from pathlib import Path
-    dataframe_path = dataframes["linear_da_lower_cost"]
+    dataframe_path = dataframes["exponential_da"]
     landscape = Landscape(dataframe_path)
     tls = TimelessSimulation(landscape_obj=landscape, starting_state="0_0", n_instances=100)
-    tls.run(2000)
+    tls.run(1000)
     tls.draw_adaptive_peak(save_path=f"{str(Path(dataframe_path).parent)}/peak.png")
     tls.walk_visualization_video(save_path=f"{str(Path(dataframe_path).parent)}/evolutionary_trajectory.mp4")

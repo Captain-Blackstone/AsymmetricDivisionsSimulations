@@ -12,7 +12,7 @@ params = {
     },
     "repair": {
         "min": 0,
-        "max": 1e-6,
+        "max": 12e-7,
         "mutation_step": 1e-7
     }
 }
@@ -74,7 +74,7 @@ class Gillespie:
         self.history.append([event[0],
                              prev_state,
                              self.instances[event[0]].current_state,
-                             np.random.poisson(1 / sum([el[2] for el in events]))])
+                             np.random.exponential(1 / sum([el[2] for el in events]))])
 
     def run(self, n_steps):
         for _ in range(n_steps):
@@ -82,20 +82,24 @@ class Gillespie:
 
     def get_normalized_history(self):
         mn = min([el[3] for el in self.history])
-        return [[el[0], el[1], el[2], int(el[3] / mn * 2)] for el in self.history]
+        mx = max([el[3] for el in self.history])
+        if mn > 1:
+            return [[el[0], el[1], el[2], int(el[3] / mn * 2)] for el in self.history]
+        else:
+            return [[el[0], el[1], el[2], round(1000 * el[3] / mx)] for el in self.history]
 
     def draw(self, save_path: str):
         fig = plt.figure()
         ax = plt.axes(xlim=(-0.5, 10.5), ylim=(-0.5, 10.5))
-        ax.set_xticks(range(11))
+        ax.set_xticks(range(len(ASYMMETRIES)))
         ax.set_xticklabels(ASYMMETRIES)
-        ax.set_yticks(range(11))
-        ax.set_yticklabels(REPAIRS)
+        ax.set_yticks(range(len(REPAIRS)))
+        ax.set_yticklabels(REPAIRS[::-1])
         ax.set_xlabel("asymmetry")
         ax.set_ylabel("repair")
-        a = np.random.random((11, 11))
+        a = np.random.random((len(REPAIRS), len(ASYMMETRIES)))
         self.im = plt.imshow(a, interpolation='none')
-        self.int_matrix = np.zeros((11, 11))
+        self.int_matrix = np.zeros((len(REPAIRS), len(ASYMMETRIES)))
         start_1, start_2 = list(map(int, self.starting_state.split("_")))
         self.int_matrix[start_1, start_2] = len(self.instances)
         nh = self.get_normalized_history()
@@ -112,7 +116,7 @@ class Gillespie:
         anim.save(save_path, writer=writer)
 
     def init_func(self):
-        self.im.set_data(np.zeros((11, 11)).astype(int))
+        self.im.set_data(np.zeros((len(REPAIRS), len(ASYMMETRIES))).astype(int))
         return [self.im]
 
     def animate(self, i):
@@ -126,9 +130,9 @@ class Gillespie:
 
 
 if __name__ == "__main__":
-    from simulations.scripts.selection_landscapes_scripts.Selection_landscape import dataframes
+    from Selection_landscape import dataframes
     from pathlib import Path
-    dataframe_path = dataframes["linear_da_lower_cost"]
+    dataframe_path = dataframes["linear_da_max_cost_at_1"]
     landscape = Landscape(dataframe_path)
     g = Gillespie(landscape_obj=landscape, starting_state="0_0", n_instances=100)
     g.run(n_steps=7000)
