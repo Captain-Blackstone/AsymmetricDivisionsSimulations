@@ -577,9 +577,11 @@ class SimulationManager:
                     dif = np.array(nn[-(i+1):]).mean().round().astype(int) == int(round(nn[-1])) and \
                           (max(nn[-(i+1):]) - min(nn[-(i+1):]))/nn[-1] < 0.001
                     dif = dif or all([el < 1 for el in nn])
+                    tt = tt[-(i + 1):]
+                    nn = nn[-(i + 1):]
                     break
             if step_number % 1000 == 0:
-                print(self.current_population_size, self.time)
+                print(self.current_population_size, self.current_simulation.phi, self.time)
             overtime = time.time() - start_time > 60*10
             if dif or overtime:
                 Path("equilibria/").mkdir(exist_ok=True)
