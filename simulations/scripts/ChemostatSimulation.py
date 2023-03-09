@@ -1,5 +1,8 @@
+import pathlib
 import random
 import string
+import time
+
 from wonderwords import RandomWord
 
 import pandas as pd
@@ -14,10 +17,34 @@ import atexit
 import logging
 
 from itertools import filterfalse
-# from collections import Counter
 
 PRECISION = 3
 logging.basicConfig(level=logging.INFO)
+
+
+def calculate_rho(B, D, F, r):
+    B_prime = B - F
+    D_prime = max(D-r, 0)
+    first_term = (B_prime + D_prime)/(1-B_prime)
+    second_term = first_term**2
+    third_term = 4 * D_prime/(1-B_prime)
+    term23 = np.sqrt(second_term + third_term)
+    return 0.5*(-first_term + term23), 0.5*(-first_term - term23)
+
+
+def calculate_phi(A, B, D, E, F, r):
+    D_prime = max(D-r, 0)
+    A_prime = A*(1-r/E)
+    rho = calculate_rho(B, D, F, r)
+    if rho[0] == 0:
+        return B/A_prime, B/A_prime
+    else:
+        return D_prime/(A_prime*rho[0]) + F/A_prime, D_prime/(A_prime*rho[1] + F/A_prime)
+
+
+def calculate_n(A, B, C, D, E, F, r):
+    phi = calculate_phi(A, B, D, E, F, r)
+    return (B/C)*(1-phi[0])/phi[0], (B/C)*(1-phi[1])/phi[1]
 
 
 class Chemostat:
@@ -307,6 +334,7 @@ class Simulation:
                  mode: str,
                  n_threads: int, n_procs: int,
                  deterministic_threshold: int,
+                 smart_initialization: bool,
                  run_name="",
                  write_cells_table=False,
                  add_runs="",
@@ -371,7 +399,8 @@ class Simulation:
                                           mode=mode,
                                           time_step_params=time_step_params,
                                           history_params=history_params,
-                                          changing_environment_params=changing_environment_params)
+                                          changing_environment_params=changing_environment_params,
+                                          smart_initialization=smart_initialization)
                         for history_params in history_params_list]
         self.n_procs = n_procs if mode in ["local", "interactive"] else 1
 
@@ -409,9 +438,10 @@ class SimulationManager:
                  mode: str,
                  time_step_params: dict,
                  history_params: dict,
+                 smart_initialization: bool,
                  changing_environment_params: dict = None,
                  ):
-
+        self.smart_initialization = smart_initialization
         self.core_params = core_params
 
         self.discrete_simulation = DiscreteSimulation(manager=self,
@@ -535,6 +565,7 @@ class SimulationManager:
             iterator = range(n_steps)
 
         tt, nn = [], []
+        start_time = time.time()
         for step_number in iterator:
             self.step(step_number)
             self.time_step_duration = min(self.time_step_duration, 0.001)
@@ -543,27 +574,31 @@ class SimulationManager:
             dif = None
             for i, t in enumerate(tt[::-1]):
                 if tt[-1] - tt[-(i+1)] > 20:
-                    dif = np.array(nn[-(i+1):]).mean().astype(int) == int(nn[-1]) and \
-                          (max(nn[-(i+1):]) - min(nn[-(i+1):]))/int(nn[-1]) < 0.001
+                    dif = np.array(nn[-(i+1):]).mean().round().astype(int) == int(round(nn[-1])) and \
+                          (max(nn[-(i+1):]) - min(nn[-(i+1):]))/nn[-1] < 0.001
+                    dif = dif or all([el < 1 for el in nn])
                     break
             if step_number % 1000 == 0:
                 print(self.current_population_size, self.time)
-
-            if dif:
-                Path("initial_parameter_search/").mkdir(exist_ok=True)
-                with open(f"initial_parameter_search/data_{np.random.randint(0, 1000000000000)}.tsv", "w") as fl:
-                    text = "\t".join(list(map(str, [
-                        self.continuous_simulation.asymmetry,
-                        self.continuous_simulation.repair,
-                        self.continuous_simulation.constants["cell_growth_rate"],
-                        self.continuous_simulation.constants["dilution_rate"],
-                        self.continuous_simulation.constants["nutrient_acquisition_rate"],
-                        self.continuous_simulation.constants["damage_accumulation_linear_component"],
-                        self.continuous_simulation.constants["max_repair"],
-                        self.current_population_size
-                    ]))) + '\n'
-                    fl.write(text)
-                    print(text)
+            overtime = time.time() - start_time > 60*10
+            if dif or overtime:
+                Path("equilibria/").mkdir(exist_ok=True)
+                filename = "_".join(list(map(str, [
+                    self.continuous_simulation.asymmetry,
+                    self.continuous_simulation.repair,
+                    self.continuous_simulation.constants["cell_growth_rate"],
+                    self.continuous_simulation.constants["dilution_rate"],
+                    self.continuous_simulation.constants["nutrient_acquisition_rate"],
+                    self.continuous_simulation.constants["damage_accumulation_linear_component"],
+                    self.continuous_simulation.constants["damage_accumulation_exponential_component"],
+                    self.continuous_simulation.constants["max_repair"]
+                ])))
+                with open(f"equilibria/{filename}.txt", "w") as fl:
+                    fl.write(f"{self.continuous_simulation.phi}\n")
+                    fl.write(" ".join(list(map(str, self.continuous_simulation.n_array))) + "\n")
+                    fl.write(f"{self.current_population_size}\n")
+                    fl.write("overtime")
+                    print("equilibrium population size: ", self.current_population_size)
                 break
             if self.mode == "interactive":
                 self.drawer.draw_step(step_number, self.time_step_duration)
@@ -660,13 +695,85 @@ class ContinuousSimulation:
                  phi: float = 1.0):
         self.manager = manager
         self.constants = constants
-        print(constants)
-
-        self.phi = phi
-        self.n_array = n_array
         self.asymmetry = asymmetry
         self.repair = repair
+        self.phi = phi
+        self.n_array = n_array
+
+        print(constants)
+        if self.manager.smart_initialization and self.repair != self.constants["max_repair"] and Path("equilibria").exists() and \
+                len(list(Path("equilibria").glob("*"))) > 0:
+            # closest_equilibrium = self.find_closest_equilibrium()
+            closest_equilibrium = None
+            if closest_equilibrium is not None:
+                print(f"Initializing with {closest_equilibrium}")
+                with closest_equilibrium.open("r") as fl:
+                    self.phi = float(fl.readline().strip())
+                    self.n_array = np.array(list(map(float, fl.readline().strip().split())))
+            else:
+                try:
+                    rho = calculate_rho(B=self.constants["dilution_rate"],
+                                        D=self.constants["damage_accumulation_linear_component"],
+                                        F=self.constants["damage_accumulation_exponential_component"],
+                                        r=self.repair)
+                    phi = calculate_phi(A=self.constants["cell_growth_rate"],
+                                        B=self.constants["dilution_rate"],
+                                        D=self.constants["damage_accumulation_linear_component"],
+                                        E=self.constants["max_repair"],
+                                        F=self.constants["damage_accumulation_exponential_component"],
+                                        r=self.repair)
+                    n = calculate_n(A=self.constants["cell_growth_rate"],
+                                    B=self.constants["dilution_rate"],
+                                    C=self.constants["nutrient_acquisition_rate"],
+                                    D=self.constants["damage_accumulation_linear_component"],
+                                    E=self.constants["max_repair"],
+                                    F=self.constants["damage_accumulation_exponential_component"],
+                                    r=self.repair)
+                    print(rho, phi, n)
+                    rho = rho[0]
+                    phi = phi[0]
+                    n = n[0]
+                    if all([el > 0 for el in [rho, phi, n]]):
+                        self.phi = phi
+                        for i, j in zip(range(1002), np.linspace(0, 1, 1001)):
+                            if round(rho, 3) == round(j, 3):
+                                self.n_array = np.zeros(1001)
+                                self.n_array[i] = n
+                                break
+                        print(f"nutrient: ", self.phi)
+                        # print(f"population: ", list(self.n_array))
+                        print(f"population_size: ", self.n_array.sum())
+                except ZeroDivisionError:
+                    self.phi = phi
+                    self.n_array = n_array
+        print("initialized", self.phi, self.n_array.sum())
         self.n_array_bins = np.linspace(0, 1, len(self.n_array))
+
+    def find_closest_equilibrium(self) -> pathlib.Path:
+        """
+        Finds the file in equilibria folder that has the parameters most resembling those of the current simulation.
+        :return:
+        """
+        equilibrium_files = list(Path("equilibria").glob("*"))
+        existing_equilibria = list(map(lambda el: list(map(float, str(el.stem).split("_"))),
+                                       equilibrium_files))
+        my_params = np.array([
+            self.asymmetry,
+            self.repair,
+            self.constants["cell_growth_rate"],
+            self.constants["dilution_rate"],
+            self.constants["nutrient_acquisition_rate"],
+            self.constants["damage_accumulation_linear_component"],
+            self.constants["damage_accumulation_exponential_component"],
+            self.constants["max_repair"]])
+        closest_equilibria = list(filter(lambda eq: ((np.array(eq) - my_params) != 0).sum() <= 1, existing_equilibria))
+        if not closest_equilibria:
+            return None
+        else:
+            closest_equilibrium_file = equilibrium_files[np.argmin([sum(np.abs((np.array(eq) - my_params))) +
+                                                                    1e100*int(eq not in closest_equilibria)
+                                                                    for eq in existing_equilibria])]
+            return closest_equilibrium_file
 
     def step(self, time_step_duration: float, delta_time_step: float):
         accept_step = False
@@ -740,7 +847,9 @@ class ContinuousSimulation:
         those_that_accumulate = n_array * np.abs(increment) / damage_step
         if (those_that_accumulate > n_array).sum() > 0:
             return None, False
-        indices = (np.arange(len(n_array)) + increment / abs(increment)).round().astype(int)
+        indices = (np.arange(len(n_array)) + np.divide(increment, np.abs(increment),
+                                                       out=np.zeros_like(increment),
+                                                        where=increment != 0)).round().astype(int)
         np.add.at(new_n_array,
                   indices[(0 <= indices) & (indices < len(n_array))],
                   those_that_accumulate[(0 <= indices) & (indices < len(n_array))])
@@ -1014,6 +1123,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default="")
     parser.add_argument("--add_runs", type=str, default="")
     parser.add_argument("--deterministic_threshold", type=int, default=3000)
+    parser.add_argument("--smart_initialization", action='store_true')
 
     args = parser.parse_args()
 
@@ -1080,6 +1190,7 @@ if __name__ == "__main__":
                             run_name=args.run_name,
                             add_runs=args.add_runs,
                             record_history=False,
-                            deterministic_threshold=args.deterministic_threshold
+                            deterministic_threshold=args.deterministic_threshold,
+                            smart_initialization=args.smart_initialization
                             )
     simulation.run(args.niterations)
