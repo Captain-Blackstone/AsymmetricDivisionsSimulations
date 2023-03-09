@@ -597,7 +597,10 @@ class SimulationManager:
                     fl.write(f"{self.continuous_simulation.phi}\n")
                     fl.write(" ".join(list(map(str, self.continuous_simulation.n_array))) + "\n")
                     fl.write(f"{self.current_population_size}\n")
-                    fl.write("overtime")
+                    if overtime:
+                        fl.write("overtime\n")
+                    elif all([el < 1 for el in nn]):
+                        fl.write("probably dying out")
                     print("equilibrium population size: ", self.current_population_size)
                 break
             if self.mode == "interactive":
