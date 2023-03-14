@@ -11,8 +11,13 @@ for file in Path("equilibria/").glob("*"):
         rhos = "\t".join(file_lines[1].strip().split())
         popsize = float(file_lines[2].strip())
         params.extend([popsize, phi, rhos])
+    with file.open("r") as fl:
+        if "overtime" in fl.read():
+            params.append(False)
+        else:
+            params.append(True)
     lines.append("\t".join(list(map(str, params))))
-header = "asymmetry\trepair\tA\tB\tC\tD\tE\tF\tN\tphi\t"
+header = "asymmetry\trepair\tA\tB\tC\tD\tE\tF\tN\tphi\tfinished"
 header += "\t".join(list(map(lambda el: str(round(el, 5)), np.linspace(0, 1, len(file_lines[1].strip().split())))))
 with open("parameter_search.tsv", "w") as fl:
     fl.write(header + '\n')
