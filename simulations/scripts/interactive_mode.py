@@ -106,7 +106,7 @@ class Drawer:
         #              data_dict["max"],
         #              data_dict["update_function"]) for data_dict in frequency_data_dicts
         # ])
-        plt.get_current_fig_manager().full_screen_toggle()
+        # plt.get_current_fig_manager().full_screen_toggle()
 
     def damage_update_func(self):
         return self.simulation_thread.current_simulation.mean_damage_concentration
@@ -163,10 +163,10 @@ class Plot:
         else:
             self.xdata.append(time_step_duration)
         self.xdata = self.xdata[-self.plot_how_many:]
-        # self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array
-        # self.xdata = list(np.arange(len(self.ydata)-1))
-        self.ydata.append(self.update_function())
-        self.ydata = self.ydata[-self.plot_how_many:]
+        self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array/self.drawer.simulation_thread.continuous_simulation.n_array.max()
+        self.xdata = list(np.arange(len(self.ydata)))
+        # self.ydata.append(self.update_function())
+        # self.ydata = self.ydata[-self.plot_how_many:]
 
     def update_data(self):
         pass
@@ -176,7 +176,7 @@ class Plot:
         rescale the axis
         :return:
         """
-        self.ax.relim()
+        # self.ax.relim()
         self.ax.autoscale_view(tight=True)
 
 
@@ -190,6 +190,9 @@ class LinePlot(Plot):
                  update_function, ylabel=None):
         super().__init__(drawer, plot_how_many, ax, color, update_function, ylabel)
         self.alpha = alpha
+        self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array/self.drawer.simulation_thread.continuous_simulation.n_array.max()
+        self.xdata = list(np.arange(len(self.ydata)))
+
         self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)
 
     def update_data(self):

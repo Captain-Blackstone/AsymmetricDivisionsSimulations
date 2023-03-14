@@ -27,12 +27,13 @@ for a in params["asymmetry"]:
                 for C in params["C"]:
                     for D in params["D"]:
                         for r in np.linspace(0, E, 6):
-                            a = 0.8
-                            r = 0.1
-                            A = 1.250075
-                            B = 0.375025
-                            C = 0.0001
-                            D = 0.75
+                            "0.6000000000000001_0.05_5.0_0.125075_1e-05_0.5_0_0.25.txt"
+                            a = 0.6
+                            r = 0.05
+                            A = 5
+                            B = 0.125075
+                            C = 1e-05
+                            D = 0.5
                             F = 0
                             E = 0.25
                             i += 1
@@ -57,5 +58,5 @@ for a in params["asymmetry"]:
                                 print(command)
                             # commands.append(command)
 print(i)
-with open("commands_for_cluster.txt", "w") as fl:
-    fl.write("\n".join(commands))
+# with open("commands_for_cluster.txt", "w") as fl:
+#     fl.write("\n".join(commands))

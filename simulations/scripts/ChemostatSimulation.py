@@ -570,7 +570,7 @@ class SimulationManager:
         start_time = time.time()
         for step_number in iterator:
             self.step(step_number)
-            self.time_step_duration = min(self.time_step_duration, 0.001)
+            self.time_step_duration = min(self.time_step_duration, 0.00001)
             tt.append(self.time)
             nn.append(self.current_population_size)
             dif = None
@@ -1142,8 +1142,8 @@ if __name__ == "__main__":
         if args.mode == "interactive":
             from interactive_mode import Drawer
     else:
-        Path("data/").mkdir(exist_ok=True)
-        save_path = "./data"
+        Path("../data/").mkdir(exist_ok=True)
+        save_path = "../data"
 
     if args.add_runs:
         args.add_runs = f"{save_path}/{args.add_runs}"
