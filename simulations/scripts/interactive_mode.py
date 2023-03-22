@@ -23,9 +23,9 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation_thread = simulation_thread
-        self.update_time = 100  # number of steps between figure updates
-        self.resolution = 10  # number of steps between data collection events
-        self.plot_how_many = 1000  # number of points present on the plot at each time point
+        self.update_time = 1000  # number of steps between figure updates
+        self.resolution = 100  # number of steps between data collection events
+        self.plot_how_many = 10000  # number of points present on the plot at each time point
         self.timeline = []
         plt.ion()
         n_plots = 2
@@ -163,10 +163,16 @@ class Plot:
         else:
             self.xdata.append(time_step_duration)
         self.xdata = self.xdata[-self.plot_how_many:]
-        self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array/self.drawer.simulation_thread.continuous_simulation.n_array.max()
-        self.xdata = list(np.arange(len(self.ydata)))
-        # self.ydata.append(self.update_function())
-        # self.ydata = self.ydata[-self.plot_how_many:]
+        # if self.color == "orange":
+        #     self.ydata = self.drawer.simulation_thread.continuous_simulation.u_array
+        # elif self.color == "green":
+        #     self.ydata.append(self.drawer.simulation_thread.continuous_simulation.n_array.sum() * self.drawer.simulation_thread.continuous_simulation.constants["cx"])
+        # else:
+        #     self.ydata.append(self.drawer.simulation_thread.continuous_simulation.u_array.sum())
+        #     self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array
+        # self.xdata = list(np.arange(len(self.ydata)))
+        self.ydata.append(self.update_function())
+        self.ydata = self.ydata[-self.plot_how_many:]
 
     def update_data(self):
         pass
@@ -176,7 +182,7 @@ class Plot:
         rescale the axis
         :return:
         """
-        # self.ax.relim()
+        self.ax.relim()
         self.ax.autoscale_view(tight=True)
 
 
@@ -190,7 +196,7 @@ class LinePlot(Plot):
                  update_function, ylabel=None):
         super().__init__(drawer, plot_how_many, ax, color, update_function, ylabel)
         self.alpha = alpha
-        self.ydata = self.drawer.simulation_thread.continuous_simulation.n_array/self.drawer.simulation_thread.continuous_simulation.n_array.max()
+        self.ydata = [] #self.drawer.simulation_thread.continuous_simulation.n_array/self.drawer.simulation_thread.continuous_simulation.n_array.max()
         self.xdata = list(np.arange(len(self.ydata)))
 
         self.layer, = self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha)

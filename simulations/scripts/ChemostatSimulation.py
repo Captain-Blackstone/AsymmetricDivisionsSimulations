@@ -585,7 +585,8 @@ class SimulationManager:
                     nn = nn[-(i + 1):]
                     break
             if step_number % 1000 == 0:
-                print(self.current_population_size, self.current_simulation.phi, self.time, self.continuous_simulation.u_array.sum())
+                print(self.current_population_size, self.current_simulation.phi, self.time)
+
             overtime = time.time() - start_time > 60*100
             if dif or overtime:
                 Path("equilibria/").mkdir(exist_ok=True)
@@ -758,7 +759,6 @@ class ContinuousSimulation:
                                 self.u_array[i] = self.n_array[i]*self.constants["cx"]
                                 break
                         print(f"nutrient: ", self.phi)
-                        # print(f"population: ", list(self.n_array))
                         print(f"population_size: ", self.n_array.sum())
                 except ZeroDivisionError:
                     self.phi = phi
@@ -838,6 +838,12 @@ class ContinuousSimulation:
                                                                           self.phi,
                                                                           self.constants["dilution_rate"],
                                                                           self.constants["nutrient_acquisition_rate"]) * delta_t
+        proposed_new_phi_n = self.phi + ContinuousSimulation.derivative_phi(self.n_array.sum(),
+                                                                          self.phi,
+                                                                          self.constants["dilution_rate"],
+                                                                          self.constants[
+                                                                              "nutrient_acquisition_rate"]) * delta_t
+
         if proposed_new_phi < 0:
             accept_step = False
         return proposed_new_phi, accept_step
@@ -882,12 +888,12 @@ class ContinuousSimulation:
         new_n_array += n_array - those_that_accumulate
 
         new_u_array = np.zeros_like(u_array)
+        u_array *= 1 + growth_rate * self.phi * delta_t
         volume_that_accumulates = u_array * np.abs(increment) / damage_step
         np.add.at(new_u_array,
                   indices[(0 <= indices) & (indices < len(u_array))],
-                  growth_rate * self.phi * volume_that_accumulates[(0 <= indices) & (indices < len(u_array))])
+                  volume_that_accumulates[(0 <= indices) & (indices < len(u_array))])
         new_u_array += u_array - volume_that_accumulates
-
         return new_n_array, new_u_array, True
 
     def reproduce(self, n_array: np.array, u_array: np.array, phi: float, delta_t: float, run: bool) \
@@ -907,11 +913,10 @@ class ContinuousSimulation:
                       n_array[(0 <= indices) & (indices < len(n_array))] * division_rate * delta_t)
             np.add.at(new_u_array,
                       indices[(0 <= indices) & (indices < len(n_array))],
-                      n_array[(0 <= indices) & (indices < len(n_array))] * division_rate * delta_t / 2)
+                      u_array[(0 <= indices) & (indices < len(n_array))] * division_rate * delta_t / 2)
 
         new_n_array += n_array * (1 - division_rate * delta_t)
         new_u_array += u_array * (1 - division_rate * delta_t)
-
         return new_n_array, new_u_array, True
 
     @property
