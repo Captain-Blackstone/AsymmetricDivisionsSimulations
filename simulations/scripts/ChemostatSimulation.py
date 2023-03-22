@@ -153,10 +153,6 @@ class Cell:
     repair_mutation_rate = 0
     repair_mutation_step = 0.01
 
-    # lambda_large_lookup
-    lambda_large_lookup_path = f"../tables/lambda_large_lookup_table.csv"
-    lambda_large_lookup = None
-
     # damage repair
     repair_cost_coefficient = 1
 
@@ -457,10 +453,15 @@ class SimulationManager:
 
         n_array = np.zeros(discretization_n_steps)
         n_array[0] = starting_population_size
+
+        u_array = np.zeros_like(n_array)
+        u_array[0] = starting_population_size * self.core_params["critical_nutrient_amount"] * \
+                     self.core_params["nutrient_to_volume_scaling_factor"]
         print(self.core_params["nutrient_accumulation_rate"], self.core_params["nutrient_to_volume_scaling_factor"],
               self.core_params["critical_nutrient_amount"], self.core_params["volume"])
         self.continuous_simulation = ContinuousSimulation(manager=self,
                                                           n_array=n_array,
+                                                          u_array=u_array,
                                                           constants=dict(
                                                               cell_growth_rate=self.core_params[
                                                                                    "nutrient_accumulation_rate"] *
@@ -477,7 +478,8 @@ class SimulationManager:
                                                               damage_accumulation_linear_component=self.core_params[
                                                                   "damage_accumulation_linear_component"],
                                                               damage_accumulation_exponential_component=self.core_params["damage_accumulation_exponential_component"],
-                                                              max_repair=self.core_params["max_repair"]
+                                                              max_repair=self.core_params["max_repair"],
+                                                              cx=self.core_params["critical_nutrient_amount"] * self.core_params["nutrient_to_volume_scaling_factor"]
                                                           ),
                                                           asymmetry=starting_asymmetry,
                                                           repair=starting_damage_repair_intensity)
@@ -570,7 +572,7 @@ class SimulationManager:
         start_time = time.time()
         for step_number in iterator:
             self.step(step_number)
-            self.time_step_duration = min(self.time_step_duration, 0.00001)
+            self.time_step_duration = min(self.time_step_duration, 0.01)
             tt.append(self.time)
             nn.append(self.current_population_size)
             dif = None
@@ -583,8 +585,8 @@ class SimulationManager:
                     nn = nn[-(i + 1):]
                     break
             if step_number % 1000 == 0:
-                print(self.current_population_size, self.current_simulation.phi, self.time)
-            overtime = time.time() - start_time > 60*10
+                print(self.current_population_size, self.current_simulation.phi, self.time, self.continuous_simulation.u_array.sum())
+            overtime = time.time() - start_time > 60*100
             if dif or overtime:
                 Path("equilibria/").mkdir(exist_ok=True)
                 filename = "_".join(list(map(str, [
@@ -597,10 +599,13 @@ class SimulationManager:
                     self.continuous_simulation.constants["damage_accumulation_exponential_component"],
                     self.continuous_simulation.constants["max_repair"]
                 ])))
+                print(filename)
                 with open(f"equilibria/{filename}.txt", "w") as fl:
                     fl.write(f"{self.continuous_simulation.phi}\n")
                     fl.write(" ".join(list(map(str, self.continuous_simulation.n_array))) + "\n")
+                    fl.write(" ".join(list(map(str, self.continuous_simulation.u_array))) + "\n")
                     fl.write(f"{self.current_population_size}\n")
+                    fl.write(f"{self.continuous_simulation.u_array.sum()}\n")
                     if overtime:
                         fl.write("overtime\n")
                     elif all([el < 1 for el in nn]):
@@ -699,6 +704,7 @@ class ContinuousSimulation:
                  asymmetry: float,
                  repair: float,
                  n_array: np.array,
+                 u_array: np.array,
                  phi: float = 1.0):
         self.manager = manager
         self.constants = constants
@@ -706,6 +712,7 @@ class ContinuousSimulation:
         self.repair = repair
         self.phi = phi
         self.n_array = n_array
+        self.u_array = u_array
 
         print(constants)
         if self.manager.smart_initialization and self.repair != self.constants["max_repair"] and Path("equilibria").exists() and \
@@ -717,6 +724,7 @@ class ContinuousSimulation:
                 with closest_equilibrium.open("r") as fl:
                     self.phi = float(fl.readline().strip())
                     self.n_array = np.array(list(map(float, fl.readline().strip().split())))
+                    self.u_array = self.n_array * self.constants["cx"]
             else:
                 try:
                     rho = calculate_rho(B=self.constants["dilution_rate"],
@@ -746,6 +754,8 @@ class ContinuousSimulation:
                             if round(rho, 3) == round(j, 3):
                                 self.n_array = np.zeros(1001)
                                 self.n_array[i] = n
+                                self.u_array = np.zeros_like(self.n_array)
+                                self.u_array[i] = self.n_array[i]*self.constants["cx"]
                                 break
                         print(f"nutrient: ", self.phi)
                         # print(f"population: ", list(self.n_array))
@@ -753,6 +763,7 @@ class ContinuousSimulation:
                 except ZeroDivisionError:
                     self.phi = phi
                     self.n_array = n_array
+                    self.u_array = u_array
         print("initialized", self.phi, self.n_array.sum())
         self.n_array_bins = np.linspace(0, 1, len(self.n_array))
 
@@ -787,16 +798,20 @@ class ContinuousSimulation:
         increase_time_step = random.uniform(0, 1) < 0.01
         while not accept_step:
             proposed_new_phi, accept_step = self.propose_new_phi(delta_t=time_step_duration)
-            n_array, accept_step = self.die(delta_t=time_step_duration, run=accept_step)
+            n_array, u_array, accept_step = self.die(delta_t=time_step_duration, run=accept_step)
 
             # TODO: do it separately for different asymmetries
-            n_array, accept_step = self.reproduce(n_array=n_array, phi=proposed_new_phi,
-                                                  delta_t=time_step_duration, run=accept_step)
+            n_array, u_array, accept_step = self.reproduce(n_array=n_array,
+                                                           u_array=u_array,
+                                                           phi=proposed_new_phi,
+                                                           delta_t=time_step_duration, run=accept_step)
 
-            n_array, accept_step = self.accumulate_damage(n_array=n_array, delta_t=time_step_duration, run=accept_step)
+            n_array, u_array, accept_step = self.accumulate_damage(n_array=n_array, u_array=u_array,
+                                                                   delta_t=time_step_duration, run=accept_step)
 
             if accept_step:
                 self.n_array = n_array
+                self.u_array = u_array
                 self.phi = proposed_new_phi
             else:
                 time_step_duration -= time_step_duration * delta_time_step
@@ -819,7 +834,7 @@ class ContinuousSimulation:
 
     def propose_new_phi(self, delta_t: float) -> (float, bool):
         accept_step = True
-        proposed_new_phi = self.phi + ContinuousSimulation.derivative_phi(self.n_array.sum(),
+        proposed_new_phi = self.phi + ContinuousSimulation.derivative_phi(self.u_array.sum()/self.constants["cx"],
                                                                           self.phi,
                                                                           self.constants["dilution_rate"],
                                                                           self.constants["nutrient_acquisition_rate"]) * delta_t
@@ -827,69 +842,89 @@ class ContinuousSimulation:
             accept_step = False
         return proposed_new_phi, accept_step
 
-    def _death_func(self) -> float:
-        return np.divide(self.n_array * self.n_array_bins, 1 - self.n_array_bins,
-                         out=self.n_array * (1 - self.constants["dilution_rate"]),
-                         where=self.n_array_bins != 1) + self.constants["dilution_rate"] * self.n_array
+    def _death_func(self, array: np.array) -> float:
+        return np.divide(array * self.n_array_bins, 1 - self.n_array_bins,
+                         out=array * (1 - self.constants["dilution_rate"]),
+                         where=self.n_array_bins != 1) + self.constants["dilution_rate"] * array
 
     def die(self, delta_t: float, run: bool) -> (np.array, bool):
         if not run:
-            return None, False
+            return None, None, False
         accept_step = True
-        dead = self._death_func() * delta_t
-        if (dead > self.n_array).sum() > 0:
-            accept_step = False
-        return self.n_array - dead, accept_step
+        dead = self._death_func(self.n_array) * delta_t
+        dead_volume = self._death_func(self.u_array) * delta_t
 
-    def accumulate_damage(self, n_array: np.array, delta_t: float, run: bool) -> (np.array, bool):
+        if ((dead > self.n_array).sum() > 0) or ((dead_volume > self.u_array).sum() > 0):
+            accept_step = False
+        return self.n_array - dead, self.u_array - dead_volume, accept_step
+
+    def accumulate_damage(self, n_array: np.array, u_array: np.array,
+                          delta_t: float, run: bool) -> (np.array, np.array, bool):
         if not run:
-            return None, False
+            return None, None, False
         new_n_array = np.zeros_like(n_array)
         damage_step = 1 / (len(self.n_array_bins) - 1)
+        growth_rate = (1 - self.repair/self.constants["max_repair"])*self.constants["cell_growth_rate"]
         increment = ContinuousSimulation.derivative_rho(rho_vector=self.n_array_bins,
                                                         current_phi=self.phi,
                                                         damage_accumulation_linear_component=max(self.constants["damage_accumulation_linear_component"] - self.repair, 0),
                                                         damage_accumulation_exponential_component=self.constants["damage_accumulation_exponential_component"],
-                                                        cell_growth_rate=(1 - self.repair/self.constants["max_repair"])*self.constants["cell_growth_rate"]) * delta_t
+                                                        cell_growth_rate=growth_rate) * delta_t
         those_that_accumulate = n_array * np.abs(increment) / damage_step
         if (those_that_accumulate > n_array).sum() > 0:
-            return None, False
+            return None, None, False
         indices = (np.arange(len(n_array)) + np.divide(increment, np.abs(increment),
                                                        out=np.zeros_like(increment),
-                                                        where=increment != 0)).round().astype(int)
+                                                       where=increment != 0)).round().astype(int)
         np.add.at(new_n_array,
                   indices[(0 <= indices) & (indices < len(n_array))],
                   those_that_accumulate[(0 <= indices) & (indices < len(n_array))])
         new_n_array += n_array - those_that_accumulate
-        return new_n_array, True
 
-    def reproduce(self, n_array: np.array, phi: float, delta_t: float, run: bool) -> (np.array, bool):
+        new_u_array = np.zeros_like(u_array)
+        volume_that_accumulates = u_array * np.abs(increment) / damage_step
+        np.add.at(new_u_array,
+                  indices[(0 <= indices) & (indices < len(u_array))],
+                  growth_rate * self.phi * volume_that_accumulates[(0 <= indices) & (indices < len(u_array))])
+        new_u_array += u_array - volume_that_accumulates
+
+        return new_n_array, new_u_array, True
+
+    def reproduce(self, n_array: np.array, u_array: np.array, phi: float, delta_t: float, run: bool) \
+            -> (np.array, np.array, bool):
         if not run:
-            return None, False
+            return None, None, False
         division_rate = self.constants["cell_growth_rate"] * phi * (1 - self.repair / self.constants["max_repair"])
         if division_rate * delta_t > 1:
-            return None, False
+            return None, None, False
 
         new_n_array = np.zeros_like(n_array)
+        new_u_array = np.zeros_like(u_array)
         for new_rho_vector in [self.n_array_bins * (1 + self.asymmetry), self.n_array_bins * (1 - self.asymmetry)]:
             indices = (new_rho_vector * (len(n_array) - 1)).round().astype(int)
             np.add.at(new_n_array,
                       indices[(0 <= indices) & (indices < len(n_array))],
                       n_array[(0 <= indices) & (indices < len(n_array))] * division_rate * delta_t)
+            np.add.at(new_u_array,
+                      indices[(0 <= indices) & (indices < len(n_array))],
+                      n_array[(0 <= indices) & (indices < len(n_array))] * division_rate * delta_t / 2)
+
         new_n_array += n_array * (1 - division_rate * delta_t)
-        return new_n_array, True
+        new_u_array += u_array * (1 - division_rate * delta_t)
+
+        return new_n_array, new_u_array, True
 
     @property
     def mean_damage_concentration(self):
         return (self.n_array * self.n_array_bins).sum() / self.n_array.sum()
 
     @staticmethod
-    def derivative_phi(n: float,
+    def derivative_phi(u: float,
                        current_phi: float,
                        dilution_rate: float,
                        nutrient_acquisition_rate: float) -> float:
         nutrient_influx = dilution_rate * (1 - current_phi)
-        nutrient_acquisition = nutrient_acquisition_rate * n * current_phi
+        nutrient_acquisition = nutrient_acquisition_rate * u * current_phi
         return nutrient_influx - nutrient_acquisition
 
     @staticmethod
