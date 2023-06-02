@@ -167,23 +167,6 @@ class Simulation:
                 if len(minima) >= 2 and len(maxima) >= 2: # If there were more than two minima and maxima
                     logging.info("convergence estimate could change now")
                     estimate = (minima[-1] + maxima[-1]) / 2 # Estimate based on last two 1st order peaks
-                    # If there is a 1st order convergence estimate and
-                    # The time since the last 1st order convergence estimate is more than critical_period/2
-                    # And the last 1st order convergence estimate is the same as the current one.
-                    # if self.convergence_estimate_first_order is not None:
-                    #     print("estimate exists")
-                    #     if self.time > self.convergence_estimate_first_order[2] + critical_period / 4:
-                    #         print("good spacing")
-                    #     else:
-                    #         print("bad spacing, not converging")
-                    #     print('current time', self.time, 'previous time', self.convergence_estimate_first_order[2],
-                    #           "span", self.time - self.convergence_estimate_first_order[2], critical_period / 4)
-                    #     print('previous estimate',
-                    #           int(self.convergence_estimate_first_order[0]),
-                    #           'current estimate',
-                    #           int(estimate))
-                    # else:
-                    #     print("estimate does not exist")
                     if self.convergence_estimate_first_order is not None:
                           print("prev n of peaks", len(minima) + len(maxima), 'current n of peaks', self.convergence_estimate_first_order[1])
                     if self.convergence_estimate_first_order is not None and \
@@ -203,6 +186,31 @@ class Simulation:
                         self.convergence_estimate_first_order = [estimate, len(minima) + len(maxima), self.time]
                         logging.info(
                             f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
+                smoothed, t_smoothed = (minima + maxima) / 2, (t_minima + t_maxima) / 2
+                if len(smoothed) > 1:
+                    index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
+                    if len(index_array) == 0:
+                        last_time = t_smoothed[0]
+                    else:
+                        last_time = t_smoothed[np.max(index_array)+1]
+                    if self.history.times[-1] - last_time > critical_period:
+                        self.converged = True
+                        logging.info(f"converged, same population size for {critical_period} time")
+                smoothed_minima, smoothed_maxima = smoothed[argrelmin(smoothed)], smoothed[argrelmax(smoothed)]
+                if len(smoothed_minima) >= 2 and len(smoothed_maxima) >= 2:
+                    logging.info("convergence estimate could change now")
+                    estimate = (smoothed_minima[-1] + smoothed_maxima[-1])/2
+                    if self.convergence_estimate_second_order is not None and \
+                            len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1] and \
+                            int(self.convergence_estimate_second_order[0]) == int(estimate):
+                        self.converged = True
+                        logging.info(
+                            f"converged, same 2nd order convergence estimate {estimate} as before: {self.convergence_estimate_second_order}")
+                    elif self.convergence_estimate_second_order is None or self.convergence_estimate_second_order is not None \
+                            and len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]:
+                        self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
+                        logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
+
         # print("-------")
         # print("-------")
         # print("-------")
