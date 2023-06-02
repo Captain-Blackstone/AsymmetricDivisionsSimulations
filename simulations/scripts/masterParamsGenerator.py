@@ -10,6 +10,19 @@ params = dict(
     F=[1],
     G=[1]
 )
+
+params = dict(
+    asymmetry=np.linspace(0, 1, 6),
+    repair=np.linspace(0, 1, 6),
+    A=[692],
+    B=np.linspace(1e-5, 0.5, 6),
+    C=np.linspace(1e-6, 1e-4, 6),
+    D=np.linspace(0, 1, 6),
+    E=np.linspace(0, 1, 6),
+    F=[1],
+    G=[1]
+)
+
 print("A", params["A"])
 print("B", params["B"])
 print("C", params["C"])

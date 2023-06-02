@@ -10,7 +10,7 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation = simulation_thread
-        self.update_time = 100  # number of steps between figure updates
+        self.update_time = 500  # number of steps between figure updates
         self.resolution = 25  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
         self.timeline = []
@@ -214,7 +214,7 @@ class MatrixPlot:
         :return:
         """
         self.ax.clear()
-        self.ax.imshow(self.ydata[:2, :], interpolation="none", aspect="auto")
+        self.ax.imshow(self.ydata, interpolation="none", aspect="auto")
 
     def update_plot(self):
         pass
