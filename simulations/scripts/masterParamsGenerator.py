@@ -1,25 +1,14 @@
 import numpy as np
-params = dict(
-    asymmetry=np.linspace(0, 1, 6),
-    repair=np.linspace(0, 1, 6),
-    A=[692],
-    B=np.linspace(1e-4, 0.5, 6),
-    C=[1e-6, 1e-5, 1e-4],
-    D=list(np.linspace(0, 0.25, 5)) + list(np.linspace(0.5, 1, 3)),
-    E=list(np.linspace(0, 0.25, 5)) + list(np.linspace(0.5, 1, 3)),
-    F=[1],
-    G=[1]
-)
 
 params = dict(
     asymmetry=np.linspace(0, 1, 6),
     repair=np.linspace(0, 1, 6),
-    A=[692],
-    B=np.linspace(1e-5, 0.5, 6),
+    A=[28],
+    B=np.linspace(0.1, 0.5, 6),
     C=np.linspace(1e-6, 1e-4, 6),
     D=np.linspace(0, 1, 6),
-    E=np.linspace(0, 1, 6),
-    F=[1],
+    E=np.linspace(0, 1, 6)[1:],
+    F=[0],
     G=[1]
 )
 
@@ -46,11 +35,15 @@ for a in params["asymmetry"]:
                             for G in params["G"]:
                                 for r in np.linspace(0, E, 6):
                                     i += 1
-                                    command = f"~/myenv/bin/python3 ChemostatSimulation.py --mode cluster " \
+                                    command = f"~/myenv/bin/python3 MasterEquationSolver.py --mode cluster " \
                                               f"-A {A} -B {B} -C {C} -D {D} -E {E} -F {F} -G {G} -a {a} -r {r} " \
-                                              f"-ni 100000000000000000 "
+                                              f"--discretization_volume 41 --discretization_damage 41"
                                     commands.append(command)
                                     # print(command)
 print(i)
 with open("commands_for_cluster.txt", "w") as fl:
     fl.write("\n".join(commands))
+
+
+
+
