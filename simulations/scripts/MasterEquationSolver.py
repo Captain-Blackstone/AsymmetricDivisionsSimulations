@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import itertools
 import time
@@ -34,6 +35,7 @@ class Simulation:
         self.error = None
         self.delta_estimation = None
         self.converged = False
+        self.lowest_eigenvalues = dict()
 
     @staticmethod
     def find_nearest(array: np.array, value: float) -> float:
@@ -58,8 +60,6 @@ class Simulation:
                                       np.diag(subdiagonal_array)[:-1, :]])
 
         growth_mtx += subdiagonal * growth_rate
-        #     print("growth")
-        #     print(growth_mtx)
 
         # Division
         division_mtx = np.zeros([len(self.p) * len(self.q)] * 2)
@@ -76,14 +76,10 @@ class Simulation:
                 division[ii[ii % len(self.p) == 0][where_to_divide[index]],
                 ii[(ii + 1) % len(self.p) == 0][index]] += growth_rate * self.p[-1]
         division_mtx += division
-        #     print("division")
-        #     print(division_mtx)
 
         # Death
         death_mtx = np.zeros([len(self.p) * len(self.q)] * 2)
         death_mtx -= np.diag(self.damage_death_rate.T.flatten() + self.params["B"])
-        # print("death")
-        # print(death_mtx)
 
         # Damage accumulation
         da_mtx = np.zeros([len(self.p) * len(self.q)] * 2)
@@ -93,8 +89,6 @@ class Simulation:
                                   np.diag(diagonal_array * self.params["D"] +
                                           np.outer(self.q, np.ones_like(self.p)).flatten() *
                                           self.params["F"])[:-len(self.p), :]])
-        #     print("damage accumulation")
-        #     print(da_mtx)
 
         # Repair
         r_mtx = np.zeros([len(self.p) * len(self.q)] * 2)
@@ -103,8 +97,6 @@ class Simulation:
         r_mtx -= np.diag(repair_array * self.params["r"])
         r_mtx += np.concatenate([np.diag(diagonal_array * self.params["r"])[len(self.p):, :],
                                  np.zeros((len(self.p), len(self.p) * len(self.q)))])
-        #     print("repair")
-        #     print(r_mtx)
 
         return growth_mtx + division_mtx + death_mtx + da_mtx + r_mtx
 
@@ -112,10 +104,11 @@ class Simulation:
         reshaped_p = np.array(list(itertools.repeat(self.p, len(self.q)))).reshape([len(self.p) * len(self.q), 1])
         delta_estimation = 1000
         min_phi, max_phi = 0, 1
+        n_steps = 11
         while not self.converged:
             lowest_vals = []
             lowest_vecs = []
-            phis = np.linspace(min_phi, max_phi, 11)
+            phis = np.linspace(min_phi, max_phi, n_steps)
             step = phis[1] - phis[0]
             if self.mode == "local":
                 iterator = tqdm(phis)
@@ -133,6 +126,14 @@ class Simulation:
                     vec = vec.reshape([len(vec), 1])
                 lowest_vals.append(least_val)
                 lowest_vecs.append(vec)
+                self.lowest_eigenvalues[phi] = least_val
+            if all([el < 0 for el in lowest_vals]) or all([el > 0 for el in lowest_vals]):
+                if n_steps == 101:
+                    break
+                else:
+                    n_steps = (n_steps - 1) * 10 + 1
+                    continue
+            n_steps = 11
             mask = np.array(lowest_vals) == self.find_nearest(np.array(lowest_vals), 0)
             phi, vector = phis[mask][0], np.array(lowest_vecs)[mask][0]
             vector = np.real(vector)
@@ -140,7 +141,6 @@ class Simulation:
                 vector *= -1
             vector[vector < 0] = 0
             k = (1 - phi) * self.params["B"] / (self.params["C"] * phi) / (reshaped_p * vector).sum()
-
             vector = vector * k
             A = self.get_derivative_matrix(phi)
             error = ((A @ (vector.reshape([len(self.p) * len(self.q), 1]))) ** 2).sum()
@@ -154,9 +154,12 @@ class Simulation:
             self.delta_estimation = delta_estimation
             self.error = error
             self.history.record()
+            # plt.scatter(phis, lowest_vals)
+            # plt.show()
             if time.time() - self.history.starting_time > max_time:
                 break
             logging.info(f"phi estimate: {self.phi_estimate}, "
+                         f"lowest eigenvalue: {min(lowest_vals)} "
                          f"population size estimate: {self.population_size_estimate}, "
                          f"delta estimation: {self.delta_estimation}, "
                          f"error: {self.error}")
@@ -195,7 +198,14 @@ class History:
             fl.write("converged: " + str(self.simulation.converged) + '\n')
 
         with open(f"{self.save_path}/population_structure.txt", "w") as fl:
-            fl.write(" ".join(list(map(str, self.simulation.population_structure_estimate.flatten()))) + '\n')
+            if self.simulation.population_structure_estimate is not None:
+                fl.write(" ".join(list(map(str, self.simulation.population_structure_estimate.flatten()))) + '\n')
+            else:
+                fl.write('\n')
+
+        with open(f"lowest_eigenvalues.txt", "w") as fl:
+            fl.write(" ".join(list(map(str, self.simulation.lowest_eigenvalues.keys()))) + '\n')
+            fl.write(" ".join(list(map(str, self.simulation.lowest_eigenvalues.values()))) + '\n')
 
 
 if __name__ == "__main__":

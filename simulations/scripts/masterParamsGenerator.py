@@ -6,7 +6,7 @@ params = dict(
     A=[28],
     B=np.linspace(0.1, 0.5, 6),
     C=np.linspace(1e-6, 1e-4, 6),
-    D=np.linspace(0, 1, 6),
+    D=np.linspace(0, 0.15, 6),
     E=np.linspace(0, 1, 6)[1:],
     F=[0],
     G=[1]
@@ -34,6 +34,8 @@ for a in params["asymmetry"]:
                         for F in params["F"]:
                             for G in params["G"]:
                                 for r in np.linspace(0, E, 6):
+                                    if r == E:
+                                        continue
                                     i += 1
                                     command = f"~/myenv/bin/python3 MasterEquationSolver.py --mode cluster " \
                                               f"-A {A} -B {B} -C {C} -D {D} -E {E} -F {F} -G {G} -a {a} -r {r} " \
