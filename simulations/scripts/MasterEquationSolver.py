@@ -240,6 +240,7 @@ if __name__ == "__main__":
                   "E": args.E, "F": args.F, "G": args.G,
                   "a": args.a, "r": args.r}
     Path(save_path).mkdir(exist_ok=True)
+    logging.info("Params: ", " ".join(["=".join([key, val]) for key, val in parameters.items()]))
     simulation = Simulation(params=parameters,
                             save_path=save_path if args.save_path is None else args.save_path,
                             discretization_volume=args.discretization_volume,
