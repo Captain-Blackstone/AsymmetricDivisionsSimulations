@@ -237,8 +237,8 @@ if __name__ == "__main__":
     else:
         save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.D}_{args.E}_{args.F}_{args.G}_{args.a}_{args.r}"
     parameters = {"A": args.A, "B": args.B, "C": args.C, "D": args.D*args.discretization_damage,
-                  "E": args.E, "F": args.F, "G": args.G,
-                  "a": args.a, "r": args.r}
+                  "E": args.E*args.discretization_damage, "F": args.F, "G": args.G,
+                  "a": args.a, "r": args.r*args.discretization_damage}
     Path(save_path).mkdir(exist_ok=True)
     logging.info("Params: ", " ".join(["=".join([key, val]) for key, val in parameters.items()]))
     simulation = Simulation(params=parameters,
