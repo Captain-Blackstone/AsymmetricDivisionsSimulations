@@ -386,8 +386,8 @@ class Simulation:
         self.delta_t = self.delta_t * 2
         # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
-        self.history.record()
         if step_number % 1000 == 0:
+            self.history.record()
             logging.info(
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}")
             self.check_convergence_v2()
@@ -440,6 +440,7 @@ class Simulation:
         finally:
             # save = self.converged if self.mode == "cluster" else True
             # if save:
+            self.history.record()
             self.history.save()
 
 
@@ -549,12 +550,12 @@ if __name__ == "__main__":
                 process.join()
     else:
         for _ in range(args.nthreads):
-            existing_folders = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
-            current_folder = Path(f"{save_path}/{max(existing_folders) + 1 if existing_folders else 1}")
-            current_folder.mkdir()
+            # existing_folders = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
+            # current_folder = Path(f"{save_path}/{max(existing_folders) + 1 if existing_folders else 1}")
+            # current_folder.mkdir()
             print(parameters)
             simulation = Simulation(params=parameters, mode=args.mode,
-                                    save_path=str(current_folder) if args.save_path is None else args.save_path,
+                                    save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
                                     discretization_damage=args.discretization_damage)
 
