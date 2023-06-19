@@ -141,6 +141,7 @@ class Simulation:
         self.max_delta_t = self.delta_t
         self.convergence_estimate_first_order = None
         self.convergence_estimate_second_order = None
+        self.convergence_estimate = None
         self.prev = 0
         self.prev_popsize = (self.matrix*self.rhos/self.matrix.sum()).sum()
 
@@ -167,6 +168,7 @@ class Simulation:
             if len(set(np.round(np.array(self.history.population_sizes)[ii]))) == 1:
                 # Last 'critical period' of time was with the same population size
                 self.converged = True
+                self.convergence_estimate = self.matrix.sum()
                 logging.info(f"same population size for {critical_period} time")
             else:
                 minima, maxima, t_minima, t_maxima = self.history.get_peaks()
@@ -184,6 +186,7 @@ class Simulation:
                             len(minima) + len(maxima) != self.convergence_estimate_first_order[1] and \
                             int(self.convergence_estimate_first_order[0]) == int(estimate):
                         self.converged = True
+                        self.convergence_estimate = self.convergence_estimate_first_order
                         logging.info(
                             f"converged, same 1st order convergence estimate {estimate} as before: "
                             f"{self.convergence_estimate_first_order}")
@@ -205,6 +208,7 @@ class Simulation:
                         last_time = t_smoothed[np.max(index_array)+1]
                     if self.history.times[-1] - last_time > critical_period:
                         self.converged = True
+                        self.convergence_estimate = self.matrix.sum()
                         logging.info(f"converged, same population size for {critical_period} time")
                 smoothed_minima, smoothed_maxima = smoothed[argrelmin(smoothed)], smoothed[argrelmax(smoothed)]
                 if len(smoothed_minima) >= 2 and len(smoothed_maxima) >= 2:
@@ -214,6 +218,7 @@ class Simulation:
                             len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1] and \
                             int(self.convergence_estimate_second_order[0]) == int(estimate):
                         self.converged = True
+                        self.convergence_estimate = self.convergence_estimate_second_order
                         logging.info(
                             f"converged, same 2nd order convergence estimate {estimate} as before: {self.convergence_estimate_second_order}")
                     elif self.convergence_estimate_second_order is None or self.convergence_estimate_second_order is not None \
@@ -471,6 +476,8 @@ class History:
             fl.write(str(self.simulation.phi) + '\n')
         with open(f"{self.save_path}/simulation_length.txt", "w") as fl:
             fl.write(str(tm.time() - self.real_times[0]))
+        with open(f"{self.save_path}/population_size_estimate.txt", "w") as fl:
+            fl.write(str(self.simulation.convergence_estimate))
 
 
 if __name__ == "__main__":
