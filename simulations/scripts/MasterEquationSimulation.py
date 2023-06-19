@@ -19,7 +19,7 @@ def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.arra
     return new_phi
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: float) -> np.array:
     those_that_die = (damage_death_rate + B) * delta_t * matrix
     return those_that_die
@@ -46,19 +46,29 @@ def accumulate_damage(matrix: np.array, D: float, F: float, delta_t: float, p: n
     return those_that_accumulate, where_to_accumulate
 
 
+# @jit(nopython=True)
+# def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array) -> np.array:
+#     those_that_repair = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
+#                                         (p * r * delta_t).reshape((len(p), 1)) * matrix[:, 1:]), axis=1)
+#     where_to_repair = np.concatenate((those_that_repair[:, 1:],
+#                                       np.zeros_like(p).reshape((len(p), 1))), axis=1)
+#     return those_that_repair, where_to_repair
+
 @jit(nopython=True)
 def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array) -> np.array:
-    those_that_repair = (p * r * delta_t).reshape((len(p), 1)) * matrix
-    where_to_repair = np.concatenate((those_that_repair[:, :-1],
+    r_prime = r * len(p)
+    those_that_repair = (p * r_prime * delta_t).reshape((len(p), 1)) * matrix
+    those_that_repair[:, 0] = 0
+    where_to_repair = np.concatenate((those_that_repair[:, 1:],
                                       np.zeros_like(p).reshape((len(p), 1))), axis=1)
     return those_that_repair, where_to_repair
 
 
 @jit(nopython=True)
-def divide(matrix: np.array, q, a) -> (np.array, np.array, np.array):
+def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.array):
     those_that_divide = matrix[-1, :]
     damage = np.arange(len(q))
-    where_to_divide_1 = np.round(damage * (1 - a) / 2)
+    where_to_divide_1 = damage * (1 - a) / 2
     where_to_divide_1 = np.array([int(el) for el in where_to_divide_1])
     where_to_divide_2 = damage - where_to_divide_1
 
@@ -314,70 +324,6 @@ class Simulation:
                                      np.zeros_like(self.p).reshape((len(self.p), 1))])
         return those_that_repair, where_to_repair
 
-    def old_step(self, step_number: int):
-        logging.debug(f"trying delta_t = {self.delta_t}")
-        logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
-        t0 = tm.time()
-        new_phi = self.update_nutrient()
-        t1 = tm.time()
-        self.alarm_phi(new_phi)
-        logging.debug("nutrient checked")
-        t2 = tm.time()
-        # print("nutrient: ", t2-t0)
-        death_from = self.death(self.matrix)
-        t3 = tm.time()
-        # print("death: ", t3-t2)
-        grow_from, grow_to = self.grow(self.matrix, new_phi)
-        t4 = tm.time()
-        # print("growth: ", t4-t3)
-        accumulate_from, accumulate_to = self.accumulate_damage(self.matrix)
-        t5 = tm.time()
-        # print("accumulate: ", t5-t4)
-        repair_from, repair_to = self.repair_damage(self.matrix)
-        t6 = tm.time()
-        # print("repair", t6-t5)
-        # print("total:", t6-t1)
-        logging.debug("checking death")
-        # self.alarm_matrix(self.matrix - death_from)
-        logging.debug("death checked")
-        logging.debug("checking growth")
-        # self.alarm_matrix(self.matrix - grow_from)
-        logging.debug("growth checked")
-        logging.debug("checking accumulation")
-        # self.alarm_matrix(self.matrix - accumulate_from)
-        logging.debug("accumulation checked")
-        logging.debug("checking repair")
-        # self.alarm_matrix(self.matrix - repair_from)
-        logging.debug("repair checked")
-        t7 = tm.time()
-        # print("alarms: ", t7 - t6)
-        new_matrix = self.matrix - death_from - grow_from + grow_to - accumulate_from + accumulate_to \
-                     - repair_from + repair_to
-
-        divide_from, divide_to_1, divide_to_2 = self.divide(new_matrix)
-        for where_to_divide in [divide_to_1, divide_to_2]:
-            np.add.at(new_matrix[0, :], where_to_divide, divide_from)
-        new_matrix[-1, :] -= divide_from
-        logging.debug("checking combination")
-        self.alarm_matrix(new_matrix)
-        logging.debug("combination checked")
-        # print("division: ", tm.time() - t7)
-        accept_step = True
-        self.matrix = new_matrix
-        self.phi = new_phi
-        self.time += self.delta_t
-        self.delta_t = self.delta_t * 10
-        self.delta_t = min(self.delta_t, 0.01)
-        self.max_delta_t = max(self.max_delta_t, self.delta_t)
-        self.history.record()
-        if step_number % 1000 == 0:
-            logging.info(f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}")
-            self.check_convergence()
-        t9 = tm.time()
-        # print("super total: ", t9 - t0)
-        # print("----------")
-        return accept_step
-
     def step(self, step_number: int):
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
@@ -499,6 +445,7 @@ class History:
         self.times = []
         self.real_times = []
         self.save_path = save_path
+        Path(self.save_path).mkdir(exist_ok=True)
         self.starting_time = tm.time()
 
     def record(self) -> None:
@@ -522,10 +469,12 @@ class History:
                 fl.write(" ".join(map(str, el)) + '\n')
         with open(f"{self.save_path}/final_phi.txt", "w") as fl:
             fl.write(str(self.simulation.phi) + '\n')
+        with open(f"{self.save_path}/simulation_length.txt", "w") as fl:
+            fl.write(str(tm.time() - self.real_times[0]))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="Chemostat simulator")
+    parser = argparse.ArgumentParser(prog="MasterEquation simulator")
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-ni", "--niterations", default=100000, type=int)
     parser.add_argument("--run_name", type=str, default="")
@@ -540,6 +489,9 @@ if __name__ == "__main__":
     parser.add_argument("-G", type=float)  # G
     parser.add_argument("-a", type=float)  # 0 <= a <= 1
     parser.add_argument("-r", type=float)  # 0 <= r <= E
+    parser.add_argument("--discretization_volume", type=int, default=251)
+    parser.add_argument("--discretization_damage", type=int, default=251)
+    parser.add_argument("--save_path", type=str, default=None)
     parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
     if args.debug:
@@ -577,7 +529,10 @@ if __name__ == "__main__":
                 current_folder = Path(f"{save_path}/{max(existing_folders) + 1 if existing_folders else 1}")
                 current_folder.mkdir()
                 simulation = Simulation(params=parameters, mode=args.mode,
-                                        save_path=str(current_folder))
+                                        save_path=str(current_folder) if args.save_path is None else args.save_path,
+                                        discretization_volume=args.discretization_volume,
+                                        discretization_damage=args.discretization_damage
+                                        )
                 simulations.append(simulation)
                 processes.append(multiprocessing.Process(target=simulation.run,
                                                          args=[args.niterations]))
@@ -590,6 +545,11 @@ if __name__ == "__main__":
             existing_folders = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
             current_folder = Path(f"{save_path}/{max(existing_folders) + 1 if existing_folders else 1}")
             current_folder.mkdir()
+            print(parameters)
             simulation = Simulation(params=parameters, mode=args.mode,
-                                    save_path=str(current_folder))
+                                    save_path=str(current_folder) if args.save_path is None else args.save_path,
+                                    discretization_volume=args.discretization_volume,
+                                    discretization_damage=args.discretization_damage)
+
             simulation.run(args.niterations)
+
