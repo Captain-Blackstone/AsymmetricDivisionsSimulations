@@ -83,7 +83,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -158,14 +158,14 @@ class Simulation:
             raise InvalidActionException
 
     def check_convergence_v2(self):
-        critical_period = self.max_delta_t*1000
+        critical_period = self.max_delta_t*10000
         logging.info(f"checking convergence, critical period - {critical_period}")
         # Claiming convergence only if critical period of time passed
         # print(self.history.times[-1], critical_period, self.max_delta_t)
         if self.history.times[-1] > critical_period:
             logging.info("really checking convergence")
             ii = (-np.array(self.history.times) + self.history.times[-1]) < critical_period
-            if len(set(np.round(np.array(self.history.population_sizes)[ii]))) == 1:
+            if len(set(np.round(np.array(self.history.population_sizes)[ii]))) == 1 and len(np.round(np.array(self.history.population_sizes)[ii])) > 1:
                 # Last 'critical period' of time was with the same population size
                 self.converged = True
                 self.convergence_estimate = self.matrix.sum()
@@ -383,7 +383,7 @@ class Simulation:
         self.matrix = new_matrix
         self.phi = new_phi
         self.time += self.delta_t
-        self.delta_t = self.delta_t * 2
+        self.delta_t = 0.01 #self.delta_t * 2
         # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
         if step_number % 1000 == 0:
@@ -466,19 +466,21 @@ class History:
         return minima, maxima, t_minima, t_maxima
 
     def save(self):
-        with open(f"{self.save_path}/population_size_history.txt", "w") as fl:
-            fl.write(" ".join(list(map(str, self.times))) + '\n')
-            fl.write(" ".join(list(map(str, self.population_sizes))) + '\n')
-            fl.write(" ".join(list(map(str, self.real_times))) + '\n')
-        with open(f"{self.save_path}/final_state.txt", "w") as fl:
-            for el in self.simulation.matrix:
-                fl.write(" ".join(map(str, el)) + '\n')
-        with open(f"{self.save_path}/final_phi.txt", "w") as fl:
-            fl.write(str(self.simulation.phi) + '\n')
-        with open(f"{self.save_path}/simulation_length.txt", "w") as fl:
-            fl.write(str(tm.time() - self.real_times[0]))
+        logging.info("convergence estimate " + str(self.simulation.convergence_estimate))
+        # with open(f"{self.save_path}/population_size_history.txt", "w") as fl:
+            # fl.write(" ".join(list(map(str, self.times))) + '\n')
+            # fl.write(str(self.population_sizes[-1]) + '\n')
+            # fl.write(" ".join(list(map(str, self.real_times))) + '\n')
+        # with open(f"{self.save_path}/final_state.txt", "w") as fl:
+        #     for el in self.simulation.matrix:
+        #         fl.write(" ".join(map(str, el)) + '\n')
+        # with open(f"{self.save_path}/final_phi.txt", "w") as fl:
+        #     fl.write(str(self.simulation.phi) + '\n')
+        # with open(f"{self.save_path}/simulation_length.txt", "w") as fl:
+        #     fl.write(str(tm.time() - self.real_times[0]))
         with open(f"{self.save_path}/population_size_estimate.txt", "w") as fl:
-            fl.write(str(self.simulation.convergence_estimate))
+            fl.write(str(self.simulation.convergence_estimate) + '\n')
+            fl.write(str(self.simulation.converged) + '\n')
 
 
 if __name__ == "__main__":
@@ -553,7 +555,6 @@ if __name__ == "__main__":
             # existing_folders = list(map(int, [file.stem for file in Path(save_path).glob("*")]))
             # current_folder = Path(f"{save_path}/{max(existing_folders) + 1 if existing_folders else 1}")
             # current_folder.mkdir()
-            print(parameters)
             simulation = Simulation(params=parameters, mode=args.mode,
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
