@@ -3,11 +3,8 @@ from scipy.signal import argrelmin, argrelmax
 import logging
 import argparse
 import time as tm
-import datetime
-import string
 
 from pathlib import Path
-import multiprocessing
 import traceback
 from numba import jit
 
@@ -17,6 +14,18 @@ def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.arra
     new_phi = phi + (B * (1 - phi) - (matrix * p.reshape(len(p), 1)).sum() *
                           C * phi) * delta_t
     return new_phi
+
+
+@jit(nopython=True)
+def update_phage(matrix: np.array,
+                 damage_death_rate: np.array,
+                 ksi: float, B: float, C: float, H: float, p: np.array, q: np.array, delta_t: float) -> float:
+    new_phage = ksi + (
+            (- B +
+            (matrix * p.reshape(len(p), 1)).sum() * C) * ksi +
+            H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum()
+                            ) * delta_t
+    return new_phage
 
 
 # @jit(nopython=True)
@@ -34,10 +43,14 @@ def grow(matrix: np.array, phi: float, A: float, r: float, E: float, p: np.array
 
 
 # @jit(nopython=True)
-def accumulate_damage(matrix: np.array, D: float, F: float, delta_t: float, p: np.array, q: np.array
+def accumulate_damage(matrix: np.array, D: float, F: float, H: float,
+                      ksi: float, delta_t: float,
+                      p: np.array, q: np.array
                       ) -> (np.array, np.array):
-    F_prime = (1+F)**delta_t -1
+    F_prime = (1+F)**delta_t - 1
     D_prime = D*len(q)
+    if H > 0:
+        D_prime *= ksi
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
                              q.reshape(1, len(q)) * F_prime) * delta_t * matrix
@@ -83,7 +96,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -93,8 +106,10 @@ def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
 class InvalidActionException(Exception):
     pass
 
+
 class OverTimeException(Exception):
     pass
+
 
 class Simulation:
     def __init__(self,
@@ -117,12 +132,14 @@ class Simulation:
         self.delta_t = 1e-20
 
         # Initialize p x q matrix
-        mean_p, mean_q, var_p, var_q, starting_phi, starting_popsize = \
+        mean_p, mean_q, var_p, var_q, starting_phi, starting_ksi, starting_popsize = \
             1 + np.random.random(),\
             np.random.random(), \
             np.random.random(), \
             np.random.random(), \
-            np.random.random(), np.random.exponential(100000)
+            np.random.random(), \
+            np.random.random(), \
+            np.random.exponential(100000)
         x, y = np.meshgrid(self.p, self.q)
         self.matrix = gaussian_2d(x.T, y.T, mean_p, mean_q, var_p, var_q)
         self.matrix = self.matrix/self.matrix.sum() * starting_popsize
@@ -134,6 +151,7 @@ class Simulation:
         #         mtx.append(list(map(float, line.strip().split())))
         #     self.matrix = np.array(mtx)
         self.phi = starting_phi
+        self.ksi = starting_ksi
 
         self.time = 0
         self.history = History(self, save_path=save_path)
@@ -152,9 +170,9 @@ class Simulation:
             raise InvalidActionException
 
     @staticmethod
-    def alarm_phi(phi: float) -> None:
+    def alarm_scalar(phi: float, check_name: str) -> None:
         if phi < 0 or phi > 1:
-            logging.debug(f"{phi} failed the check (nutrient)")
+            logging.debug(f"{phi} failed the check ({check_name})")
             raise InvalidActionException
 
     def check_convergence_v2(self):
@@ -231,66 +249,6 @@ class Simulation:
         # print("-------")
         # print("-------")
 
-    # def check_convergence(self):
-    #     logging.info("checking convergence")
-    #     critical_period = self.max_delta_t*5000
-    #     logging.info(f"{self.history.times[-1]}, {critical_period}")
-    #     if self.history.times[-1] > critical_period:
-    #         logging.info("really checking convergence")
-    #         ii = (-np.array(self.history.times) + self.history.times[-1]) < critical_period
-    #         if len(set(np.round(np.array(self.history.population_sizes)[ii]))) == 1:
-    #             self.converged = True
-    #             logging.info(f"same population size for {critical_period} time")
-    #         else:
-    #             minima, maxima, t_minima, t_maxima = self.history.get_peaks()
-    #             minima, maxima, t_minima, t_maxima = minima[:min(len(minima), len(maxima))], \
-    #                 maxima[:min(len(minima), len(maxima))], \
-    #                 t_minima[:min(len(minima), len(maxima))], \
-    #                 t_maxima[:min(len(minima), len(maxima))]
-    #             if len(minima) >= 2 and len(maxima) >= 2:
-    #                 logging.info("convergence estimate could change now")
-    #                 estimate = (minima[-1] + maxima[-1])/2
-    #                 if self.convergence_estimate_first_order is not None and \
-    #                         self.time > self.convergence_estimate_first_order[2] + critical_period/4 and \
-    #                         len(minima) + len(maxima) != self.convergence_estimate_first_order[1] and \
-    #                         int(self.convergence_estimate_first_order[0]) == int(estimate):
-    #                     self.converged = True
-    #                     logging.info(
-    #                         f"converged, same 1st order convergence estimate {estimate} as before: {self.convergence_estimate_first_order}")
-    #                 elif self.convergence_estimate_first_order is None or \
-    #                         self.convergence_estimate_first_order is not None and \
-    #                         self.time > self.convergence_estimate_first_order[2] + critical_period/4 and \
-    #                         len(minima) + len(maxima) != self.convergence_estimate_first_order[1]:
-    #                     self.convergence_estimate_first_order = [estimate, len(minima) + len(maxima), self.time]
-    #                     logging.info(f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
-    #             smoothed, t_smoothed = (minima + maxima)/2, (t_minima + t_maxima)/2
-    #             if len(smoothed) > 1:
-    #                 index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
-    #                 if len(index_array) == 0:
-    #                     last_time = t_smoothed[0]
-    #                 else:
-    #                     last_time = t_smoothed[np.max(index_array)+1]
-    #                 if self.history.times[-1] - last_time > critical_period:
-    #                     self.converged = True
-    #                     logging.info(f"converged, same population size for {critical_period} time")
-    #             smoothed_minima, smoothed_maxima = smoothed[argrelmin(smoothed)], smoothed[argrelmax(smoothed)]
-    #             logging.info(f"{minima[-10:]}, {maxima[-10:]}")
-    #             logging.info(f"smoothed minima and maxima: {smoothed_minima}, {smoothed_maxima}")
-    #             if len(smoothed_minima) >= 2 and len(smoothed_maxima) >= 2:
-    #                 logging.info("convergence estimate could change now")
-    #                 estimate = (smoothed_minima[-1] + smoothed_maxima[-1])/2
-    #                 if self.convergence_estimate_second_order is not None and \
-    #                         len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1] and \
-    #                         int(self.convergence_estimate_second_order[0]) == int(estimate):
-    #                     self.converged = True
-    #                     logging.info(
-    #                         f"converged, same 2nd order convergence estimate {estimate} as before: {self.convergence_estimate_second_order}")
-    #                 elif self.convergence_estimate_second_order is None or self.convergence_estimate_second_order is not None \
-    #                         and len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]:
-    #                     self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
-    #                     logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
-
-
     def death(self, matrix: np.array) -> np.array:
         those_that_die = (self.damage_death_rate + self.params["B"]) * self.delta_t * matrix
         return those_that_die
@@ -299,6 +257,14 @@ class Simulation:
         new_phi = self.phi + (self.params["B"] * (1 - self.phi) - (self.matrix * self.p.reshape(len(self.p), 1)).sum() *
                               self.params["C"]) * self.delta_t
         return new_phi
+
+    def update_phage(self, matrix):
+        new_phage = self.ksi + (
+                (-self.params["B"] +
+                (matrix * self.p.reshape(len(self.p), 1)).sum() * self.params["C"]) * self.ksi +
+                self.params["H"] * (self.damage_death_rate * matrix * self.q.reshape(1, len(self.q))).sum()
+                                ) * self.delta_t
+        return new_phage
 
     def grow(self, matrix: np.array, phi: float) -> (np.array, np.array):
         those_that_grow = self.params["A"] * (1 - self.params["r"] / self.params["E"]) * phi \
@@ -335,8 +301,20 @@ class Simulation:
         t0 = tm.time()
         new_phi = update_nutrient(self.matrix, self.phi, self.params["B"], self.params["C"], self.p,
                                   self.delta_t)
+
         t1 = tm.time()
-        self.alarm_phi(new_phi)
+        self.alarm_scalar(new_phi, "nutrient")
+
+        if self.params["H"] > 0:
+            new_ksi = update_phage(self.matrix,
+                                   self.damage_death_rate,
+                                   self.ksi,
+                                   self.params["B"], self.params["C"], self.params["H"],
+                                   self.p, self.q,
+                                   self.delta_t)
+
+            self.alarm_scalar(new_ksi, "phage")
+
         logging.debug("nutrient checked")
         t2 = tm.time()
         # print("nutrient: ", t2-t0)
@@ -349,7 +327,8 @@ class Simulation:
         t4 = tm.time()
         # print("growth: ", t4-t3)
         accumulate_from, accumulate_to = accumulate_damage(self.matrix, self.params["D"],
-                                                           self.params["F"], self.delta_t,
+                                                           self.params["F"], self.params["H"],
+                                                           self.ksi, self.delta_t,
                                                            self.p, self.q)
         t5 = tm.time()
         # print("accumulate: ", t5-t4)
@@ -382,15 +361,19 @@ class Simulation:
         accept_step = True
         self.matrix = new_matrix
         self.phi = new_phi
+        if self.params["H"] > 0:
+            self.ksi = new_ksi
         self.time += self.delta_t
-        self.delta_t = 0.01 #self.delta_t * 2
-        # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
         if step_number % 1000 == 0:
             self.history.record()
             logging.info(
-                f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}")
+                f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
+                f"ksi={self.ksi}")
             self.check_convergence_v2()
+        self.delta_t = 0.01 #self.delta_t * 2
+        # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
+
         t9 = tm.time()
         # print("super total: ", t9 - t0)
         # print("------------")
@@ -438,8 +421,6 @@ class Simulation:
             error_message = traceback.format_exc()
             logging.error(error_message)
         finally:
-            # save = self.converged if self.mode == "cluster" else True
-            # if save:
             self.history.record()
             self.history.save()
 
@@ -484,6 +465,7 @@ if __name__ == "__main__":
     parser.add_argument("-E", type=float)  # 0 < E <= 1
     parser.add_argument("-F", type=float)  # 0 <= F
     parser.add_argument("-G", type=float)  # G
+    parser.add_argument("-H", type=float, default=0)
     parser.add_argument("-a", type=int)  # 0 <= a <= 1
     parser.add_argument("-r", type=int)  # 0 <= r <= E
     parser.add_argument("--discretization_volume", type=int, default=251)
@@ -509,8 +491,9 @@ if __name__ == "__main__":
     Path(save_path).mkdir(exist_ok=True)
     for a in np.linspace(0, 1, args.a):
         for r in np.linspace(0, args.E, args.r + 1):
-            parameters = {"A": args.A, "B": args.B, "C": args.C, "D": args.D, "E": args.E, "F": args.F,
-                          "G": args.G, "a": a, "r": r}
+            parameters = {"A": args.A, "B": args.B, "C": args.C,
+                          "D": args.D, "E": args.E, "F": args.F,
+                          "G": args.G, "H": args.H, "a": a, "r": r}
             simulation = Simulation(params=parameters, mode=args.mode,
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
