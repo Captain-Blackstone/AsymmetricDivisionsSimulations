@@ -14,8 +14,7 @@ from numba import jit
 
 @jit(nopython=True)
 def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.array, delta_t: float) -> float:
-    new_phi = phi + (B * (1 - phi) - (matrix * p.reshape(len(p), 1)).sum() *
-                          C * phi) * delta_t
+    new_phi = phi + (B * (1 - phi) - (matrix * p.reshape(len(p), 1)).sum() * C * phi) * delta_t
     return new_phi
 
 
@@ -36,7 +35,8 @@ def grow(matrix: np.array, phi: float, A: float, r: float, E: float, p: np.array
 # @jit(nopython=True)
 def accumulate_damage(matrix: np.array, D: float, F: float, delta_t: float, p: np.array, q: np.array
                       ) -> (np.array, np.array):
-    F_prime = (1+F)**delta_t -1
+    F_prime = F #((1+F)**delta_t - 1)
+
     D_prime = D*len(q)
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
@@ -83,7 +83,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -114,7 +114,7 @@ class Simulation:
         self.damage_death_rate = (self.rhos / (1 - self.rhos)) ** self.params["G"]
         self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
             ~np.isinf(self.damage_death_rate)].max()
-        self.delta_t = 1e-20
+        self.delta_t = 1e-2
 
         # Initialize p x q matrix
         mean_p, mean_q, var_p, var_q, starting_phi, starting_popsize = \
@@ -126,8 +126,6 @@ class Simulation:
         x, y = np.meshgrid(self.p, self.q)
         self.matrix = gaussian_2d(x.T, y.T, mean_p, mean_q, var_p, var_q)
         self.matrix = self.matrix/self.matrix.sum() * starting_popsize
-        # self.matrix = np.zeros((len(self.p), len(self.q)))
-        # self.matrix[:, 0] = 1/len(self.p)
         # # with open("/home/blackstone/PycharmProjects/AsymmetricDivisionsSimulations/simulations/data/master_equation/1685131265447297_knowledgeable_kingfish/1/final_state.txt", "r") as fl:
         #     mtx = []
         #     for line in fl.readlines():
@@ -329,7 +327,7 @@ class Simulation:
                                      np.zeros_like(self.p).reshape((len(self.p), 1))])
         return those_that_repair, where_to_repair
 
-    def step(self, step_number: int):
+    def step(self, step_number: int) -> bool:
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
         t0 = tm.time()
@@ -398,7 +396,6 @@ class Simulation:
         #     logging.info(f"{self.time}, {self.matrix.sum()}")
         #     self.prev = self.time
         #     self.matrix /= self.matrix.sum()
-
         return accept_step
 
     def run(self, n_steps: int) -> None:
