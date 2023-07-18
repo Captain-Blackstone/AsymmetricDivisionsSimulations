@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy.signal import argrelmin, argrelmax
 import logging
 import argparse
@@ -7,6 +8,7 @@ import time as tm
 from pathlib import Path
 import traceback
 from numba import jit
+
 
 
 @jit(nopython=True)
@@ -170,9 +172,9 @@ class Simulation:
             raise InvalidActionException
 
     @staticmethod
-    def alarm_scalar(phi: float, check_name: str) -> None:
-        if phi < 0 or phi > 1:
-            logging.debug(f"{phi} failed the check ({check_name})")
+    def alarm_scalar(scalar: float, check_name: str) -> None:
+        if scalar < 0 or scalar > 1:
+            logging.debug(f"{scalar} failed the check ({check_name})")
             raise InvalidActionException
 
     def check_convergence_v2(self):
@@ -212,7 +214,7 @@ class Simulation:
                     # there is one and some additional peaks arrived, update the 1st order convergence estimate
                     elif self.convergence_estimate_first_order is None or \
                             self.convergence_estimate_first_order is not None and \
-                            self.time > self.convergence_estimate_first_order[2] + critical_period/ 4 and \
+                            self.time > self.convergence_estimate_first_order[2] + critical_period / 4 and \
                                     len(minima) + len(maxima) != self.convergence_estimate_first_order[1]:
                         self.convergence_estimate_first_order = [estimate, len(minima) + len(maxima), self.time]
                         logging.info(
@@ -260,7 +262,7 @@ class Simulation:
 
     def update_phage(self, matrix):
         new_phage = self.ksi + (
-                (-self.params["B"] +
+                (-self.params["B"] -
                 (matrix * self.p.reshape(len(self.p), 1)).sum() * self.params["C"]) * self.ksi +
                 self.params["H"] * (self.damage_death_rate * matrix * self.q.reshape(1, len(self.q))).sum()
                                 ) * self.delta_t
@@ -371,7 +373,8 @@ class Simulation:
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
                 f"ksi={self.ksi}")
             self.check_convergence_v2()
-        self.delta_t = 0.01 #self.delta_t * 2
+        self.delta_t *= 2
+        self.delta_t = min(self.delta_t, 0.01)
         # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
 
         t9 = tm.time()
@@ -449,9 +452,13 @@ class History:
     def save(self):
         print("-------------------saving-------------------------")
         logging.info("convergence estimate " + str(self.simulation.convergence_estimate))
+        if self.simulation.convergence_estimate is None:
+            convergence_estimate = self.simulation.matrix.sum()
+        else:
+            convergence_estimate = self.simulation.convergence_estimate
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
-                     f"{self.simulation.convergence_estimate},{self.simulation.converged}\n")
+                     f"{convergence_estimate},{self.simulation.converged}\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
@@ -491,6 +498,15 @@ if __name__ == "__main__":
     Path(save_path).mkdir(exist_ok=True)
     for a in np.linspace(0, 1, args.a):
         for r in np.linspace(0, args.E, args.r + 1):
+
+            # Do not rerun already existing estimations
+            estimates_file = (Path(save_path)/Path("population_size_estimate.txt"))
+            if estimates_file.exists():
+                estimates = pd.read_csv(estimates_file, sep=",", header=None)
+                if len(estimates.loc[(abs(estimates[0] - a) < 1e-5) & (abs(estimates[1] - r) < 1e-5), :]) > 0:
+                    logging.info(f"skipping a={a}, r={r}, estimate already exists")
+                    continue
+
             parameters = {"A": args.A, "B": args.B, "C": args.C,
                           "D": args.D, "E": args.E, "F": args.F,
                           "G": args.G, "H": args.H, "a": a, "r": r}
@@ -498,6 +514,6 @@ if __name__ == "__main__":
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
                                     discretization_damage=args.discretization_damage)
-
+            logging.info(f"starting simulation with params: {parameters}")
             simulation.run(args.niterations)
 
