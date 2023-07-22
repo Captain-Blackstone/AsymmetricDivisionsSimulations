@@ -497,7 +497,7 @@ if __name__ == "__main__":
 
     Path(save_path).mkdir(exist_ok=True)
     for a in np.linspace(0, 1, args.a):
-        for r in np.linspace(0, args.E, args.r + 1):
+        for r in np.linspace(0, args.D, args.r):
 
             # Do not rerun already existing estimations
             estimates_file = (Path(save_path)/Path("population_size_estimate.txt"))
@@ -516,4 +516,24 @@ if __name__ == "__main__":
                                     discretization_damage=args.discretization_damage)
             logging.info(f"starting simulation with params: {parameters}")
             simulation.run(args.niterations)
+    df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
+    rr = np.linspace(0, args.D, args.r)
+    if len(rr) > 1:
+        r_step = rr[1] - rr[0]
+        max_r = max(df[1])
+        print(df.loc[(df[1] == max(df[1])) & (df[2] > 1)])
+        while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
+            r = max_r + r_step
+            max_r = r
+            for a in np.linspace(0, 1, args.a):
+                parameters = {"A": args.A, "B": args.B, "C": args.C,
+                              "D": args.D, "E": args.E, "F": args.F,
+                              "G": args.G, "H": args.H, "a": a, "r": r}
+                simulation = Simulation(params=parameters, mode=args.mode,
+                                        save_path=str(save_path) if args.save_path is None else args.save_path,
+                                        discretization_volume=args.discretization_volume,
+                                        discretization_damage=args.discretization_damage)
+                logging.info(f"starting simulation with params: {parameters}")
+                simulation.run(args.niterations)
+            df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
 
