@@ -23,9 +23,9 @@ def update_phage(matrix: np.array,
                  damage_death_rate: np.array,
                  ksi: float, B: float, C: float, H: float, p: np.array, q: np.array, delta_t: float) -> float:
     new_phage = ksi + (
-            (- B +
-            (matrix * p.reshape(len(p), 1)).sum() * C) * ksi +
-            H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum()
+            (- B
+             - (matrix * p.reshape(len(p), 1)).sum() * C) * ksi
+             + H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum()
                             ) * delta_t
     return new_phage
 
@@ -49,8 +49,8 @@ def accumulate_damage(matrix: np.array, D: float, F: float, H: float,
                       ksi: float, delta_t: float,
                       p: np.array, q: np.array
                       ) -> (np.array, np.array):
-    F_prime = (1+F)**delta_t - 1
-    D_prime = D*len(q)
+    F_prime = F
+    D_prime = D * len(q)
     if H > 0:
         D_prime *= ksi
     those_that_accumulate = (np.zeros((len(p), len(q))) +
@@ -61,17 +61,9 @@ def accumulate_damage(matrix: np.array, D: float, F: float, H: float,
     return those_that_accumulate, where_to_accumulate
 
 
-# @jit(nopython=True)
-# def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array) -> np.array:
-#     those_that_repair = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
-#                                         (p * r * delta_t).reshape((len(p), 1)) * matrix[:, 1:]), axis=1)
-#     where_to_repair = np.concatenate((those_that_repair[:, 1:],
-#                                       np.zeros_like(p).reshape((len(p), 1))), axis=1)
-#     return those_that_repair, where_to_repair
-
 @jit(nopython=True)
-def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array) -> np.array:
-    r_prime = r * len(p)
+def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array, q: np.array) -> np.array:
+    r_prime = r * len(q)
     those_that_repair = (p * r_prime * delta_t).reshape((len(p), 1)) * matrix
     those_that_repair[:, 0] = 0
     where_to_repair = np.concatenate((those_that_repair[:, 1:],
@@ -246,57 +238,6 @@ class Simulation:
                         self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
                         logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
 
-        # print("-------")
-        # print("-------")
-        # print("-------")
-        # print("-------")
-
-    def death(self, matrix: np.array) -> np.array:
-        those_that_die = (self.damage_death_rate + self.params["B"]) * self.delta_t * matrix
-        return those_that_die
-
-    def update_nutrient(self) -> float:
-        new_phi = self.phi + (self.params["B"] * (1 - self.phi) - (self.matrix * self.p.reshape(len(self.p), 1)).sum() *
-                              self.params["C"]) * self.delta_t
-        return new_phi
-
-    def update_phage(self, matrix):
-        new_phage = self.ksi + (
-                (-self.params["B"] -
-                (matrix * self.p.reshape(len(self.p), 1)).sum() * self.params["C"]) * self.ksi +
-                self.params["H"] * (self.damage_death_rate * matrix * self.q.reshape(1, len(self.q))).sum()
-                                ) * self.delta_t
-        return new_phage
-
-    def grow(self, matrix: np.array, phi: float) -> (np.array, np.array):
-        those_that_grow = self.params["A"] * (1 - self.params["r"] / self.params["E"]) * phi \
-                          * self.p.reshape(len(self.p), 1) * self.delta_t * matrix
-        where_to_grow = np.vstack([np.zeros_like(self.q).reshape((1, len(self.q))), those_that_grow[:-1, :]])
-        return those_that_grow, where_to_grow
-
-    def divide(self, matrix: np.array) -> (np.array, np.array, np.array):
-        those_that_divide = matrix[-1, :]
-        damage = np.arange(len(self.q))
-        where_to_divide_1 = (damage * (1 - self.params["a"]) / 2).round().astype(int)
-        where_to_divide_2 = damage - where_to_divide_1
-        return those_that_divide, where_to_divide_1, where_to_divide_2
-
-    def accumulate_damage(self, matrix: np.array) -> (np.array, np.array):
-        F_prime = self.params["F"]**self.delta_t
-        D_prime = self.params["D"]*len(self.q)
-        those_that_accumulate = (np.zeros((len(self.p), len(self.q))) +
-                                 self.p.reshape(len(self.p), 1) * D_prime +
-                                 self.q.reshape(1, len(self.q)) * F_prime) * self.delta_t * matrix
-        where_to_accumulate = np.hstack([np.zeros_like(self.p).reshape((len(self.p), 1)),
-                                         those_that_accumulate[:, :-1]])
-        return those_that_accumulate, where_to_accumulate
-
-    def repair_damage(self, matrix: np.array) -> np.array:
-        those_that_repair = (self.p * self.params["r"] * self.delta_t).reshape((len(self.p), 1)) * matrix
-        where_to_repair = np.hstack([those_that_repair[:, :-1],
-                                     np.zeros_like(self.p).reshape((len(self.p), 1))])
-        return those_that_repair, where_to_repair
-
     def step(self, step_number: int):
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
@@ -334,7 +275,7 @@ class Simulation:
                                                            self.p, self.q)
         t5 = tm.time()
         # print("accumulate: ", t5-t4)
-        repair_from, repair_to = repair_damage(self.matrix, self.params["r"], self.delta_t, self.p)
+        repair_from, repair_to = repair_damage(self.matrix, self.params["r"], self.delta_t, self.p, self.q)
         t6 = tm.time()
         # print("repair", t6-t5)
         # print("total:", t6-t1)
@@ -389,7 +330,7 @@ class Simulation:
 
     def run(self, n_steps: int) -> None:
         starting_time = tm.time()
-        max_time = 60*10
+        max_time = 60*20
         try:
             if self.mode in ["local", "interactive"]:
                 iterator = tqdm(range(n_steps))
@@ -456,6 +397,8 @@ class History:
             convergence_estimate = self.simulation.matrix.sum()
         else:
             convergence_estimate = self.simulation.convergence_estimate
+            if type(convergence_estimate) == list:
+                convergence_estimate = convergence_estimate[0]
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
                      f"{convergence_estimate},{self.simulation.converged}\n")
@@ -497,12 +440,12 @@ if __name__ == "__main__":
 
     Path(save_path).mkdir(exist_ok=True)
     for a in np.linspace(0, 1, args.a):
-        for r in np.linspace(0, args.D, args.r):
-
+        for r in np.linspace(0, min(args.D, args.E), args.r):
             # Do not rerun already existing estimations
             estimates_file = (Path(save_path)/Path("population_size_estimate.txt"))
             if estimates_file.exists():
-                estimates = pd.read_csv(estimates_file, sep=",", header=None)
+                print(str(estimates_file))
+                estimates = pd.read_csv(str(estimates_file), sep=",", header=None)
                 if len(estimates.loc[(abs(estimates[0] - a) < 1e-5) & (abs(estimates[1] - r) < 1e-5), :]) > 0:
                     logging.info(f"skipping a={a}, r={r}, estimate already exists")
                     continue
@@ -523,7 +466,8 @@ if __name__ == "__main__":
         max_r = max(df[1])
         print(df.loc[(df[1] == max(df[1])) & (df[2] > 1)])
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
-            r = max_r + r_step
+            r_step *= 1.1
+            r = min(max_r + r_step, args.E)
             max_r = r
             for a in np.linspace(0, 1, args.a):
                 parameters = {"A": args.A, "B": args.B, "C": args.C,
