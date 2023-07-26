@@ -90,7 +90,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -395,10 +395,6 @@ class History:
         logging.info("convergence estimate " + str(self.simulation.convergence_estimate))
         if self.simulation.convergence_estimate is None:
             convergence_estimate = self.simulation.matrix.sum()
-            if not self.simulation.converged:
-                with open(f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:
-                    fl.write(",".join(list(map(str, self.times))) + '\n')
-                    fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
         else:
             convergence_estimate = self.simulation.convergence_estimate
             if type(convergence_estimate) == list:
@@ -406,6 +402,11 @@ class History:
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
                      f"{convergence_estimate},{self.simulation.converged}\n")
+        with open(f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+                  "w") as fl:
+            fl.write(",".join(list(map(str, self.times))) + '\n')
+            fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
