@@ -8,6 +8,7 @@ import time as tm
 from pathlib import Path
 import traceback
 from numba import jit
+import warnings
 
 
 
@@ -119,10 +120,12 @@ class Simulation:
         self.params = params
         self.p = np.linspace(1, 2, discretization_volume)
         self.q = np.linspace(0, 1, discretization_damage)
-        self.rhos = np.outer(1 / self.p, self.q)
-        self.damage_death_rate = (self.rhos / (1 - self.rhos)) ** self.params["G"]
-        self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
-            ~np.isinf(self.damage_death_rate)].max()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.rhos = np.outer(1 / self.p, self.q)
+            self.damage_death_rate = (self.rhos / (1 - self.rhos)) ** self.params["G"]
+            self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
+                ~np.isinf(self.damage_death_rate)].max()
         self.delta_t = 1e-20
 
         # Initialize p x q matrix
