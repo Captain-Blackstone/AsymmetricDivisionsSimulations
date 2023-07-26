@@ -1,3 +1,5 @@
+import atexit
+
 import numpy as np
 import pandas as pd
 from scipy.signal import argrelmin, argrelmax
@@ -411,6 +413,10 @@ class History:
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
 
 
+def write_completion(save_path):
+    with open(f"{save_path}/population_size_estimate.txt", "a") as fl:
+        fl.write("scanning completed\n")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
@@ -447,6 +453,7 @@ if __name__ == "__main__":
         save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.D}_{args.E}_{args.F}_{args.G}"
 
     Path(save_path).mkdir(exist_ok=True)
+    atexit.register(lambda: write_completion(save_path))
     for a in np.linspace(0, 1, args.a):
         for r in np.linspace(0, min(args.D, args.E), args.r):
             # Do not rerun already existing estimations
@@ -488,4 +495,5 @@ if __name__ == "__main__":
                 logging.info(f"starting simulation with params: {parameters}")
                 simulation.run(args.niterations)
             df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
+
 
