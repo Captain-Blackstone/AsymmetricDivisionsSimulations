@@ -191,8 +191,8 @@ class Simulation:
                 if len(minima) >= 2 and len(maxima) >= 2: # If there were more than two minima and maxima
                     logging.info("convergence estimate could change now")
                     estimate = (minima[-1] + maxima[-1]) / 2 # Estimate based on last two 1st order peaks
-                    if self.convergence_estimate_first_order is not None:
-                          print("prev n of peaks", len(minima) + len(maxima), 'current n of peaks', self.convergence_estimate_first_order[1])
+                    # if self.convergence_estimate_first_order is not None:
+                    #       print("prev n of peaks", len(minima) + len(maxima), 'current n of peaks', self.convergence_estimate_first_order[1])
                     if self.convergence_estimate_first_order is not None and \
                             self.time > self.convergence_estimate_first_order[2] + critical_period/4 and \
                             len(minima) + len(maxima) != self.convergence_estimate_first_order[1] and \
@@ -330,7 +330,7 @@ class Simulation:
 
     def run(self, n_steps: int) -> None:
         starting_time = tm.time()
-        max_time = 60*20
+        max_time = 60*10
         try:
             if self.mode in ["local", "interactive"]:
                 iterator = tqdm(range(n_steps))
@@ -386,8 +386,8 @@ class History:
 
     def get_peaks(self) -> (np.array, np.array, np.array, np.array):
         popsizes, times = np.array(self.population_sizes), np.array(self.times)
-        minima, t_minima = popsizes[argrelmin(popsizes, order=10)], times[argrelmin(popsizes, order=10)]
-        maxima, t_maxima = popsizes[argrelmax(popsizes, order=10)], times[argrelmax(popsizes, order=10)]
+        minima, t_minima = popsizes[argrelmin(popsizes)], times[argrelmin(popsizes)]
+        maxima, t_maxima = popsizes[argrelmax(popsizes)], times[argrelmax(popsizes)]
         return minima, maxima, t_minima, t_maxima
 
     def save(self):
@@ -402,7 +402,7 @@ class History:
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
                      f"{convergence_estimate},{self.simulation.converged}\n")
-        with open(f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+        with open(f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
                   "w") as fl:
             fl.write(",".join(list(map(str, self.times))) + '\n')
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
@@ -457,7 +457,7 @@ if __name__ == "__main__":
 
             parameters = {"A": args.A, "B": args.B, "C": args.C,
                           "D": args.D, "E": args.E, "F": args.F,
-                          "G": args.G, "H": args.H, "a": a, "r": r}
+                          "G": args.G, "H": args.H, "a": round(a, 5), "r": round(r, 5)}
             simulation = Simulation(params=parameters, mode=args.mode,
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
@@ -471,13 +471,13 @@ if __name__ == "__main__":
         max_r = max(df[1])
         print(df.loc[(df[1] == max(df[1])) & (df[2] > 1)])
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
-            r_step *= 1.1
+            r_step *= 2
             r = min(max_r + r_step, args.E)
             max_r = r
             for a in np.linspace(0, 1, args.a):
                 parameters = {"A": args.A, "B": args.B, "C": args.C,
                               "D": args.D, "E": args.E, "F": args.F,
-                              "G": args.G, "H": args.H, "a": a, "r": r}
+                              "G": args.G, "H": args.H, "a": round(a, 5), "r": round(r, 5)}
                 simulation = Simulation(params=parameters, mode=args.mode,
                                         save_path=str(save_path) if args.save_path is None else args.save_path,
                                         discretization_volume=args.discretization_volume,
