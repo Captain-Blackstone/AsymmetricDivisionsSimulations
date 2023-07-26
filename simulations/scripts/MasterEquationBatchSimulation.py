@@ -395,6 +395,10 @@ class History:
         logging.info("convergence estimate " + str(self.simulation.convergence_estimate))
         if self.simulation.convergence_estimate is None:
             convergence_estimate = self.simulation.matrix.sum()
+            if not self.simulation.converged:
+                with open(f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:
+                    fl.write(",".join(list(map(str, self.times))) + '\n')
+                    fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
         else:
             convergence_estimate = self.simulation.convergence_estimate
             if type(convergence_estimate) == list:
