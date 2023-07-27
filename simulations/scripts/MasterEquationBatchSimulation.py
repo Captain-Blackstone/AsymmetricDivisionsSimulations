@@ -23,18 +23,31 @@ def peak_distance_dynamics(peaks):
     peak_d = peak_distance(peaks)
     return np.ediff1d(peak_d)
 
+def strictly_increasing(L):
+    return all(x<y for x, y in zip(L, L[1:]))
+
+def strictly_decreasing(L):
+    return all(x>y for x, y in zip(L, L[1:]))
+
+
+
 def convergence(peaks):
     distance = peak_distance(peaks)
     dynamics = peak_distance_dynamics(peaks)
     if len(dynamics) > 0:
-        if distance[-1] == 0 or (all([el <= 0 for el in dynamics[1:]]) and any([el < 0 for el in dynamics[1:]])):
+        if distance[-1] < 1 or (all([el <= 0 for el in dynamics[1:]]) and any([el < 0 for el in dynamics[1:]])):
             return "converged"
-        if len(distance) >= 3 and len(set(distance[-3:])) == 1 and distance[-1] != 0:
+        if len(distance) >= 5 and strictly_increasing(distance[-10:]):
+            return "diverging"
+        if (len(distance) >= 10 and (len(set(distance[-3:])) == 1 or
+                                   not strictly_increasing(distance[-10:]) and
+                                   not strictly_decreasing(distance[-10:]))
+                and distance[-1] >= 1):
             return "cycle"
-        return "cycle"
+        return "undefined"
     else:
         return "not converged"
-    
+
 def equilibrium_N(peaks):
     if len(peaks) == 0 or peaks[-1] < 1:
         return 0
@@ -122,7 +135,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
