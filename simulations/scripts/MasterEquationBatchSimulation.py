@@ -333,7 +333,7 @@ class Simulation:
 
         return accept_step
 
-    def run(self, n_steps: int) -> None:
+    def run(self, n_steps: int) -> (np.array, float):
         starting_time = tm.time()
         max_time = 60*10
         try:
@@ -372,6 +372,7 @@ class Simulation:
         finally:
             self.history.record()
             self.history.save()
+        return self.matrix, self.phi
 
 
 class History:
@@ -414,8 +415,8 @@ class History:
 
 
 def write_completion(save_path):
-    with open(f"{save_path}/population_size_estimate.txt", "a") as fl:
-        fl.write("scanning completed\n")
+    with open(f"{save_path}/scanning.txt", "a") as fl:
+        fl.write("complete\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
@@ -454,6 +455,7 @@ if __name__ == "__main__":
 
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
+    matrix, phi = None, None
     for a in np.linspace(0, 1, args.a):
         for r in np.linspace(0, min(args.D, args.E), args.r):
             # Do not rerun already existing estimations
@@ -472,8 +474,11 @@ if __name__ == "__main__":
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
                                     discretization_damage=args.discretization_damage)
+            if matrix is not None and phi is not None:
+                simulation.matrix = matrix
+                simulation.phi = phi
             logging.info(f"starting simulation with params: {parameters}")
-            simulation.run(args.niterations)
+            matrix, phi = simulation.run(args.niterations)
     df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
     rr = np.linspace(0, args.D, args.r)
     if len(rr) > 1:
@@ -492,8 +497,14 @@ if __name__ == "__main__":
                                         save_path=str(save_path) if args.save_path is None else args.save_path,
                                         discretization_volume=args.discretization_volume,
                                         discretization_damage=args.discretization_damage)
+                if matrix is not None and phi is not None:
+                    simulation.matrix = matrix
+                    simulation.phi = phi
                 logging.info(f"starting simulation with params: {parameters}")
-                simulation.run(args.niterations)
+                matrix, phi = simulation.run(args.niterations)
             df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
+    with open(f"{save_path}/scanning.txt", "a") as fl:
+        fl.write("success\n")
+
 
 
