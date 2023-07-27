@@ -12,7 +12,36 @@ import traceback
 from numba import jit
 import warnings
 
+def get_peaks(array):
+    peaks = np.array(array)[sorted(list(argrelmin(np.array(array))[0]) + list(argrelmax(np.array(array))[0]))]
+    return peaks
+    
+def peak_distance(peaks):
+    return np.abs(np.ediff1d(peaks))
+    
+def peak_distance_dynamics(peaks):
+    peak_d = peak_distance(peaks)
+    return np.ediff1d(peak_d)
 
+def convergence(peaks):
+    distance = peak_distance(peaks)
+    dynamics = peak_distance_dynamics(peaks)
+    if len(dynamics) > 0:
+        if distance[-1] == 0 or (all([el <= 0 for el in dynamics[1:]]) and any([el < 0 for el in dynamics[1:]])):
+            return "converged"
+        if len(distance) >= 3 and len(set(distance[-3:])) == 1 and distance[-1] != 0:
+            return "cycle"
+        return "cycle"
+    else:
+        return "not converged"
+    
+def equilibrium_N(peaks):
+    if len(peaks) == 0 or peaks[-1] < 1:
+        return 0
+    elif len(peaks) >=2:
+        return (peaks[-1] + peaks[-2])/2
+    elif len(peaks) == 1:
+        return peaks[0]
 
 @jit(nopython=True)
 def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.array, delta_t: float) -> float:
@@ -188,6 +217,11 @@ class Simulation:
                 self.convergence_estimate = self.matrix.sum()
                 logging.info(f"same population size for {critical_period} time")
             else:
+                peaks = get_peaks(self.history.population_sizes)
+                if convergence(peaks) == "cycle":
+                    self.converged = True
+                    self.convergence_estimate = equilibrium_N(peaks)
+                    logging.info("got a cycle")
                 minima, maxima, t_minima, t_maxima = self.history.get_peaks()
                 minima, maxima, t_minima, t_maxima = minima[-min(len(minima), len(maxima)):], \
                     maxima[-min(len(minima), len(maxima)):], \
@@ -217,7 +251,7 @@ class Simulation:
                         logging.info(
                             f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
                 smoothed, t_smoothed = (minima + maxima) / 2, (t_minima + t_maxima) / 2
-                if len(smoothed) > 1:
+                if len(smoothed) > 5:
                     index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
                     if len(index_array) == 0:
                         last_time = t_smoothed[0]
@@ -242,8 +276,10 @@ class Simulation:
                             and len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]:
                         self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
                         logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
+            
 
     def step(self, step_number: int):
+        #self.delta_t = 0.001
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
         t0 = tm.time()
@@ -313,7 +349,7 @@ class Simulation:
             self.ksi = new_ksi
         self.time += self.delta_t
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
-        if step_number % 1000 == 0:
+        if step_number % 200 == 0:
             self.history.record()
             logging.info(
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
@@ -400,14 +436,20 @@ class History:
         print("-------------------saving-------------------------")
         logging.info("convergence estimate " + str(self.simulation.convergence_estimate))
         if self.simulation.convergence_estimate is None:
-            convergence_estimate = self.simulation.matrix.sum()
+            peaks = get_peaks(self.population_sizes)
+            if convergence(peaks) in ["converged", "cycle"]:
+                convergence_estimate = equilibrium_N(peaks)
+            else:
+                convergence_estimate = self.simulation.matrix.sum()
         else:
             convergence_estimate = self.simulation.convergence_estimate
             if type(convergence_estimate) == list:
                 convergence_estimate = convergence_estimate[0]
+        peaks = get_peaks(self.population_sizes)
+        estimated_mode = convergence(peaks)
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
-                     f"{convergence_estimate},{self.simulation.converged}\n")
+                     f"{convergence_estimate},{self.simulation.converged},{estimated_mode}\n")
         with open(f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
                   "w") as fl:
             fl.write(",".join(list(map(str, self.times))) + '\n')
@@ -474,7 +516,9 @@ if __name__ == "__main__":
                                     save_path=str(save_path) if args.save_path is None else args.save_path,
                                     discretization_volume=args.discretization_volume,
                                     discretization_damage=args.discretization_damage)
-            if matrix is not None and phi is not None:
+            if matrix is not None and phi is not None and matrix.sum() > 0:
+                if matrix.sum() < 1:
+                    matrix = matrix/matrix.sum()
                 simulation.matrix = matrix
                 simulation.phi = phi
             logging.info(f"starting simulation with params: {parameters}")
@@ -497,7 +541,9 @@ if __name__ == "__main__":
                                         save_path=str(save_path) if args.save_path is None else args.save_path,
                                         discretization_volume=args.discretization_volume,
                                         discretization_damage=args.discretization_damage)
-                if matrix is not None and phi is not None:
+                if matrix is not None and phi is not None and matrix.sum() > 0:
+                    if matrix.sum() < 1:
+                        matrix = matrix/matrix.sum()
                     simulation.matrix = matrix
                     simulation.phi = phi
                 logging.info(f"starting simulation with params: {parameters}")
