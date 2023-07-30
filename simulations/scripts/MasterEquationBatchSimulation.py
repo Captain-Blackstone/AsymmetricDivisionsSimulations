@@ -518,8 +518,9 @@ if __name__ == "__main__":
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
     matrix, phi = None, None
+    max_r = min(args.D, args.E) if args.D != 0 else min(args.F/100, args.E)
     for a in np.linspace(0, 1, args.a):
-        for r in np.linspace(0, min(args.D, args.E), args.r):
+        for r in np.linspace(0, max_r, args.r):
             # Do not rerun already existing estimations
             estimates_file = (Path(save_path)/Path("population_size_estimate.txt"))
             if estimates_file.exists():
@@ -551,7 +552,6 @@ if __name__ == "__main__":
     if len(rr) > 1:
         r_step = rr[1] - rr[0]
         max_r = max(df[1])
-        print(df.loc[(df[1] == max(df[1])) & (df[2] > 1)])
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
             r_step *= 2
             r = min(max_r + r_step, args.E)
