@@ -66,13 +66,24 @@ def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.arra
 @jit(nopython=True)
 def update_phage(matrix: np.array,
                  damage_death_rate: np.array,
-                 ksi: float, B: float, C: float, H: float, p: np.array, q: np.array, delta_t: float) -> float:
-    new_phage = ksi + (
-            (- B
-             - (matrix * p.reshape(len(p), 1)).sum() * C) * ksi
-             + H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum()
-                            ) * delta_t
-    return new_phage
+                 ksi: float, B: float, C: float, F: float, H: float, p: np.array, q: np.array, delta_t: float) -> float:
+    diluted = B * ksi * delta_t
+    sucked_by_cells = C * ksi * (matrix * p.reshape(len(p), 1)).sum() * delta_t
+    exiting_from_cells_by_death = H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum() * delta_t
+    exiting_from_cells_by_accumulation = H * \
+                                          ((np.zeros((len(p), len(q))) +
+                                            p.reshape(len(p), 1) * C * ksi +
+                                            q.reshape(1, len(q)) * F)[:, -1].sum() * q[-1]) * delta_t
+    new_ksi = ksi - diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation
+    # print("diluted: ", diluted)
+    # print("sucked_by_cells: ", sucked_by_cells)
+    # print("exiting_from_cells_by_death: ", exiting_from_cells_by_death)
+    # print("exiting_from_cells_by_accumulation: ", exiting_from_cells_by_accumulation)
+    # print('----')
+    # print("removed: ", diluted + sucked_by_cells)
+    # print("added: ", exiting_from_cells_by_death + exiting_from_cells_by_accumulation)
+    # print("~~~~~~~~~~~")
+    return new_ksi
 
 
 # @jit(nopython=True)
@@ -90,19 +101,26 @@ def grow(matrix: np.array, phi: float, A: float, r: float, E: float, p: np.array
 
 
 # @jit(nopython=True)
-def accumulate_damage(matrix: np.array, D: float, F: float, H: float,
+def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
                       ksi: float, delta_t: float,
                       p: np.array, q: np.array
                       ) -> (np.array, np.array):
     F_prime = F
     D_prime = D * len(q)
     if H > 0:
-        D_prime *= ksi
+        D_prime += ksi*C
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
                              q.reshape(1, len(q)) * F_prime) * delta_t * matrix
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)
+    # print("damage_before", (those_that_accumulate*q.reshape(1, len(q))).sum())
+    # print(those_that_accumulate[:, -1].sum()*q[-1])
+    # print("damage_after", (where_to_accumulate * q.reshape(1, len(q))).sum())
+    damage_before_accumulation = (matrix * q.reshape(1, len(q))).sum()
+    damage_after_accumulation = ((matrix - those_that_accumulate + where_to_accumulate) * q.reshape(1, len(q))).sum()
+    # print("accumulated", damage_after_accumulation - damage_before_accumulation)
+    # print("сохранение массы", (matrix - those_that_accumulate + where_to_accumulate).sum(), matrix.sum())
     return those_that_accumulate, where_to_accumulate
 
 
@@ -135,7 +153,7 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     return matrix
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -211,9 +229,15 @@ class Simulation:
             raise InvalidActionException
 
     @staticmethod
-    def alarm_scalar(scalar: float, check_name: str) -> None:
+    def alarm_phi(scalar: float) -> None:
         if scalar < 0 or scalar > 1:
-            logging.debug(f"{scalar} failed the check ({check_name})")
+            logging.debug(f"{scalar} failed the check (phi)")
+            raise InvalidActionException
+
+    @staticmethod
+    def alarm_ksi(scalar: float) -> None:
+        if scalar < 0:
+            logging.debug(f"{scalar} failed the check (ksi)")
             raise InvalidActionException
 
     def check_convergence_v2(self):
@@ -295,44 +319,30 @@ class Simulation:
         #self.delta_t = 0.001
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
-        t0 = tm.time()
         new_phi = update_nutrient(self.matrix, self.phi, self.params["B"], self.params["C"], self.p,
                                   self.delta_t)
 
-        t1 = tm.time()
-        self.alarm_scalar(new_phi, "nutrient")
+        self.alarm_phi(new_phi)
 
         if self.params["H"] > 0:
             new_ksi = update_phage(self.matrix,
                                    self.damage_death_rate,
                                    self.ksi,
-                                   self.params["B"], self.params["C"], self.params["H"],
+                                   self.params["B"], self.params["C"], self.params["F"], self.params["H"],
                                    self.p, self.q,
                                    self.delta_t)
 
-            self.alarm_scalar(new_ksi, "phage")
 
         logging.debug("nutrient checked")
-        t2 = tm.time()
-        # print("nutrient: ", t2-t0)
         death_from = death(self.matrix, self.damage_death_rate, self.params["B"], self.delta_t)
-        t3 = tm.time()
-        # print("death: ", t3-t2)
         grow_from, grow_to = grow(self.matrix, self.phi, self.params["A"],
                                   self.params["r"], self.params["E"],
                                   self.p, self.delta_t, self.q)
-        t4 = tm.time()
-        # print("growth: ", t4-t3)
-        accumulate_from, accumulate_to = accumulate_damage(self.matrix, self.params["D"],
+        accumulate_from, accumulate_to = accumulate_damage(self.matrix, self.params["C"], self.params["D"],
                                                            self.params["F"], self.params["H"],
                                                            self.ksi, self.delta_t,
                                                            self.p, self.q)
-        t5 = tm.time()
-        # print("accumulate: ", t5-t4)
         repair_from, repair_to = repair_damage(self.matrix, self.params["r"], self.delta_t, self.p, self.q)
-        t6 = tm.time()
-        # print("repair", t6-t5)
-        # print("total:", t6-t1)
         logging.debug("checking death")
         # self.alarm_matrix(self.matrix - death_from)
         logging.debug("death checked")
@@ -345,8 +355,6 @@ class Simulation:
         logging.debug("checking repair")
         # self.alarm_matrix(self.matrix - repair_from)
         logging.debug("repair checked")
-        t7 = tm.time()
-        # print("alarms: ", t7 - t6)
         new_matrix = self.matrix - death_from - grow_from + grow_to - accumulate_from + accumulate_to \
                      - repair_from + repair_to
 
@@ -354,7 +362,6 @@ class Simulation:
         logging.debug("checking combination")
         self.alarm_matrix(new_matrix)
         logging.debug("combination checked")
-        # print("division: ", tm.time() - t7)
         accept_step = True
         self.matrix = new_matrix
         self.phi = new_phi
@@ -372,9 +379,6 @@ class Simulation:
         self.delta_t = min(self.delta_t, 0.01)
         # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
 
-        t9 = tm.time()
-        # print("super total: ", t9 - t0)
-        # print("------------")
         # if self.time > self.prev + 1:
         #     logging.info(f"{self.time}, {self.matrix.sum()}")
         #     self.prev = self.time
@@ -465,6 +469,9 @@ class History:
                      f"{convergence_estimate},{self.simulation.converged},{estimated_mode}\n")
         with open(f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
                   "w") as fl:
+            if self.population_sizes[-1]  < 1 and all([x >= y for x, y in zip(self.population_sizes, self.population_sizes[1:])]):
+                self.times = [self.times[0], self.times[-1]]
+                self.population_sizes = [self.population_sizes[0], self.population_sizes[-1]]
             fl.write(",".join(list(map(str, self.times))) + '\n')
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
 
@@ -534,6 +541,9 @@ if __name__ == "__main__":
                     matrix = matrix/matrix.sum()
                 simulation.matrix = matrix
                 simulation.phi = phi
+            if args.H > 0:
+                simulation.matrix /= simulation.matrix.sum()
+                simulation.phi = 1
             logging.info(f"starting simulation with params: {parameters}")
             matrix, phi = simulation.run(args.niterations)
     df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
@@ -559,6 +569,9 @@ if __name__ == "__main__":
                         matrix = matrix/matrix.sum()
                     simulation.matrix = matrix
                     simulation.phi = phi
+                if args.H > 0:
+                    simulation.matrix /= simulation.matrix.sum()
+                    simulation.phi = 1
                 logging.info(f"starting simulation with params: {parameters}")
                 matrix, phi = simulation.run(args.niterations)
             df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
