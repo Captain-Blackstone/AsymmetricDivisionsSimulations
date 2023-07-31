@@ -1,7 +1,6 @@
 import atexit
 
 import numpy as np
-import pandas as pd
 from scipy.signal import argrelmin, argrelmax
 import logging
 import argparse
@@ -97,8 +96,7 @@ def update_phage(matrix: np.array,
 def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: float) -> np.array:
     those_that_die_from_dilution = B * delta_t * matrix
     those_that_die_from_damage = damage_death_rate * delta_t * matrix
-    harshness = those_that_die_from_damage.sum() / those_that_die_from_dilution.sum()
-    return those_that_die_from_dilution + those_that_die_from_damage, harshness
+    return those_that_die_from_dilution + those_that_die_from_damage, those_that_die_from_damage.sum(), those_that_die_from_dilution.sum()
 
 
 @jit(nopython=True)
@@ -121,6 +119,7 @@ def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
                              q.reshape(1, len(q)) * F_prime) * delta_t * matrix
+    add_to_damage_harshness = those_that_accumulate[:, -1].sum()
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)
     # print("damage_before", (those_that_accumulate*q.reshape(1, len(q))).sum())
@@ -130,7 +129,7 @@ def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
     damage_after_accumulation = ((matrix - those_that_accumulate + where_to_accumulate) * q.reshape(1, len(q))).sum()
     # print("accumulated", damage_after_accumulation - damage_before_accumulation)
     # print("сохранение массы", (matrix - those_that_accumulate + where_to_accumulate).sum(), matrix.sum())
-    return those_that_accumulate, where_to_accumulate
+    return those_that_accumulate, where_to_accumulate, add_to_damage_harshness
 
 
 @jit(nopython=True)
@@ -346,15 +345,16 @@ class Simulation:
                                    self.delta_t)
 
         logging.debug("nutrient checked")
-        death_from, self.harshness = death(self.matrix, self.damage_death_rate, self.params["B"], self.delta_t)
+        death_from, died_from_damage, died_from_dilution = death(self.matrix, self.damage_death_rate, self.params["B"], self.delta_t)
         grow_from, grow_to = grow(self.matrix, self.phi, self.params["A"],
                                   self.params["r"], self.params["E"],
                                   self.p, self.delta_t, self.q)
-        accumulate_from, accumulate_to = accumulate_damage(self.matrix, self.params["C"], self.params["D"],
+        accumulate_from, accumulate_to, add_to_damage_harshness = accumulate_damage(self.matrix, self.params["C"], self.params["D"],
                                                            self.params["F"], self.params["H"],
                                                            self.ksi, self.delta_t,
                                                            self.p, self.q)
         repair_from, repair_to = repair_damage(self.matrix, self.params["r"], self.delta_t, self.p, self.q)
+        self.harshness = (died_from_damage + add_to_damage_harshness)/died_from_dilution
         logging.debug("checking death")
         # self.alarm_matrix(self.matrix - death_from)
         logging.debug("death checked")
@@ -387,13 +387,12 @@ class Simulation:
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
                 f"ksi={self.ksi}")
             self.check_convergence_v2()
-            print(self.harshness)
         self.delta_t *= 2
         self.delta_t = min(self.delta_t, 0.01)
         # self.delta_t = min(self.delta_t, 0.01)#, self.phi)
 
         # if self.time > self.prev + 1:
-        #     logging.info(f"{self.time}, {self.matrix.sum()}")
+        #     # logging.info(f"{self.time}, {self.matrix.sum()}")
         #     self.prev = self.time
         #     self.matrix /= self.matrix.sum()
 
@@ -538,6 +537,7 @@ if __name__ == "__main__":
                             discretization_volume=args.discretization_volume,
                             discretization_damage=args.discretization_damage)
     target_harshness = simulation.run(1000000)
+    print("-------------------------")
     output_text = "error"
     if simulation.converged == False:
         output_text = "Target harshness failed to converge"
