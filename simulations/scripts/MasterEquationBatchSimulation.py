@@ -12,8 +12,9 @@ import traceback
 from numba import jit
 import warnings
 
-def get_peaks(array):
-    peaks = np.array(array)[sorted(list(argrelmin(np.array(array))[0]) + list(argrelmax(np.array(array))[0]))]
+
+def get_peaks(lst: list):
+    peaks = np.array(lst)[sorted(list(argrelmin(np.array(lst))[0]) + list(argrelmax(np.array(lst))[0]))]
     return peaks
     
 def peak_distance(peaks):
@@ -51,7 +52,7 @@ def convergence(peaks):
 def equilibrium_N(peaks):
     if len(peaks) == 0 or peaks[-1] < 1:
         return 0
-    elif len(peaks) >=2:
+    elif len(peaks) >= 2:
         return (peaks[-1] + peaks[-2])/2
     elif len(peaks) == 1:
         return peaks[0]
@@ -75,21 +76,14 @@ def update_phage(matrix: np.array,
                                             p.reshape(len(p), 1) * C * ksi +
                                             q.reshape(1, len(q)) * F)[:, -1].sum() * q[-1]) * delta_t
     new_ksi = ksi - diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation
-    # print("diluted: ", diluted)
-    # print("sucked_by_cells: ", sucked_by_cells)
-    # print("exiting_from_cells_by_death: ", exiting_from_cells_by_death)
-    # print("exiting_from_cells_by_accumulation: ", exiting_from_cells_by_accumulation)
-    # print('----')
-    # print("removed: ", diluted + sucked_by_cells)
-    # print("added: ", exiting_from_cells_by_death + exiting_from_cells_by_accumulation)
-    # print("~~~~~~~~~~~")
     return new_ksi
 
 
 # @jit(nopython=True)
 def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: float) -> np.array:
-    those_that_die = (damage_death_rate + B) * delta_t * matrix
-    return those_that_die
+    those_that_die_from_dilution = B * delta_t * matrix
+    those_that_die_from_damage = damage_death_rate * delta_t * matrix
+    return those_that_die_from_dilution + those_that_die_from_damage
 
 
 @jit(nopython=True)
@@ -114,13 +108,6 @@ def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
                              q.reshape(1, len(q)) * F_prime) * delta_t * matrix
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)
-    # print("damage_before", (those_that_accumulate*q.reshape(1, len(q))).sum())
-    # print(those_that_accumulate[:, -1].sum()*q[-1])
-    # print("damage_after", (where_to_accumulate * q.reshape(1, len(q))).sum())
-    damage_before_accumulation = (matrix * q.reshape(1, len(q))).sum()
-    damage_after_accumulation = ((matrix - those_that_accumulate + where_to_accumulate) * q.reshape(1, len(q))).sum()
-    # print("accumulated", damage_after_accumulation - damage_before_accumulation)
-    # print("сохранение массы", (matrix - those_that_accumulate + where_to_accumulate).sum(), matrix.sum())
     return those_that_accumulate, where_to_accumulate
 
 
@@ -141,7 +128,6 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
     where_to_divide_1 = damage * (1 - a) / 2
     where_to_divide_1 = np.array([int(el) for el in where_to_divide_1])
     where_to_divide_2 = damage - where_to_divide_1
-
     for k in range(len(where_to_divide_1)):
         matrix[0, where_to_divide_1[k]] += those_that_divide[k]
 
@@ -242,11 +228,8 @@ class Simulation:
 
     def check_convergence_v2(self):
         critical_period = self.max_delta_t*10000
-        logging.info(f"checking convergence, critical period - {critical_period}")
         # Claiming convergence only if critical period of time passed
-        # print(self.history.times[-1], critical_period, self.max_delta_t)
         if self.history.times[-1] > critical_period:
-            logging.info("really checking convergence")
             ii = (-np.array(self.history.times) + self.history.times[-1]) < critical_period
             if len(set(np.round(np.array(self.history.population_sizes)[ii]))) == 1 and len(np.round(np.array(self.history.population_sizes)[ii])) > 1:
                 # Last 'critical period' of time was with the same population size
@@ -254,18 +237,12 @@ class Simulation:
                 self.convergence_estimate = self.matrix.sum()
                 logging.info(f"same population size for {critical_period} time")
             else:
-                peaks = get_peaks(self.history.population_sizes)
-                if convergence(peaks) == "cycle":
-                    self.converged = True
-                    self.convergence_estimate = equilibrium_N(peaks)
-                    logging.info("got a cycle")
                 minima, maxima, t_minima, t_maxima = self.history.get_peaks()
                 minima, maxima, t_minima, t_maxima = minima[-min(len(minima), len(maxima)):], \
                     maxima[-min(len(minima), len(maxima)):], \
                     t_minima[-min(len(minima), len(maxima)):], \
                     t_maxima[-min(len(minima), len(maxima)):]
                 if len(minima) >= 2 and len(maxima) >= 2: # If there were more than two minima and maxima
-                    logging.info("convergence estimate could change now")
                     estimate = (minima[-1] + maxima[-1]) / 2 # Estimate based on last two 1st order peaks
                     # if self.convergence_estimate_first_order is not None:
                     #       print("prev n of peaks", len(minima) + len(maxima), 'current n of peaks', self.convergence_estimate_first_order[1])
@@ -285,8 +262,8 @@ class Simulation:
                             self.time > self.convergence_estimate_first_order[2] + critical_period / 4 and \
                                     len(minima) + len(maxima) != self.convergence_estimate_first_order[1]:
                         self.convergence_estimate_first_order = [estimate, len(minima) + len(maxima), self.time]
-                        logging.info(
-                            f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
+                        # logging.info(
+                        #     f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
                 smoothed, t_smoothed = (minima + maxima) / 2, (t_minima + t_maxima) / 2
                 if len(smoothed) > 5:
                     index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
@@ -300,7 +277,6 @@ class Simulation:
                         logging.info(f"converged, same population size for {critical_period} time")
                 smoothed_minima, smoothed_maxima = smoothed[argrelmin(smoothed)], smoothed[argrelmax(smoothed)]
                 if len(smoothed_minima) >= 2 and len(smoothed_maxima) >= 2:
-                    logging.info("convergence estimate could change now")
                     estimate = (smoothed_minima[-1] + smoothed_maxima[-1])/2
                     if self.convergence_estimate_second_order is not None and \
                             len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1] and \
@@ -312,8 +288,12 @@ class Simulation:
                     elif self.convergence_estimate_second_order is None or self.convergence_estimate_second_order is not None \
                             and len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]:
                         self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
-                        logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
-            
+                        # logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
+                peaks = get_peaks(self.history.population_sizes)
+                if convergence(peaks) == "cycle":
+                    self.converged = True
+                    self.convergence_estimate = equilibrium_N(peaks)
+                    logging.info("got a cycle")
 
     def step(self, step_number: int):
         #self.delta_t = 0.001
@@ -369,7 +349,7 @@ class Simulation:
             self.ksi = new_ksi
         self.time += self.delta_t
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
-        if step_number % 200 == 0:
+        if step_number % 2000 == 0:
             self.history.record()
             logging.info(
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
@@ -386,7 +366,7 @@ class Simulation:
 
         return accept_step
 
-    def run(self, n_steps: int) -> (np.array, float):
+    def run(self, n_steps: int, save=True) -> (np.array, float):
         starting_time = tm.time()
         max_time = 60*10
         try:
@@ -412,8 +392,6 @@ class Simulation:
                     if self.delta_t == 0:
                         logging.warning("No way to make the next step")
                         self.delta_t = 1e-20
-
-                        # break
                 # if self.delta_t == 0 or self.converged:
                 if self.converged:
                     break
@@ -424,7 +402,8 @@ class Simulation:
             logging.error(error_message)
         finally:
             self.history.record()
-            self.history.save()
+            if save:
+                self.history.save()
         return self.matrix, self.phi
 
 
@@ -437,11 +416,14 @@ class History:
         self.save_path = save_path
         Path(self.save_path).mkdir(exist_ok=True)
         self.starting_time = tm.time()
+        self.phage_history = []
 
     def record(self) -> None:
         self.population_sizes.append(self.simulation.matrix.sum())
         self.times.append(self.simulation.time)
         self.real_times.append(tm.time() - self.starting_time)
+        if self.simulation.params["H"] > 0:
+            self.phage_history.append(self.simulation.ksi)
 
     def get_peaks(self) -> (np.array, np.array, np.array, np.array):
         popsizes, times = np.array(self.population_sizes), np.array(self.times)
@@ -464,9 +446,17 @@ class History:
                 convergence_estimate = convergence_estimate[0]
         peaks = get_peaks(self.population_sizes)
         estimated_mode = convergence(peaks)
+        text = f"{self.simulation.params['a']},{self.simulation.params['r']}," \
+               f"{convergence_estimate},{self.simulation.converged},{estimated_mode}"
+        if self.simulation.params["H"] > 0:
+            peaks = get_peaks(self.phage_history)
+            if len(peaks) > 1:
+                ksi = (peaks[-2] + peaks[-1]) / 2
+            else:
+                ksi = self.phage_history[-1]
+            text += "," + str(round(ksi, 5))
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
-            fl.write(f"{self.simulation.params['a']},{self.simulation.params['r']},"
-                     f"{convergence_estimate},{self.simulation.converged},{estimated_mode}\n")
+            fl.write(text + "\n")
         with open(f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
                   "w") as fl:
             if self.population_sizes[-1]  < 1 and all([x >= y for x, y in zip(self.population_sizes, self.population_sizes[1:])]):
@@ -474,11 +464,14 @@ class History:
                 self.population_sizes = [self.population_sizes[0], self.population_sizes[-1]]
             fl.write(",".join(list(map(str, self.times))) + '\n')
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
+            if self.simulation.params["H"] > 0:
+                fl.write(",".join(list(map(str, self.phage_history))) + '\n')
 
 
 def write_completion(save_path):
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("complete\n")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
@@ -518,7 +511,49 @@ if __name__ == "__main__":
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
     matrix, phi = None, None
-    max_r = min(args.D, args.E) if args.D != 0 else min(args.F/100, args.E)
+    if args.H == 0:
+        max_r = min(args.D, args.E) if args.D != 0 else min(args.F/100, args.E)
+    else:
+        max_r = min(args.D, args.E) if args.D != 0 else min(args.F / 100, args.E)
+        # Finding an appropriate r
+        max_r_guesses = [min(args.F/100, args.E)]
+        stop_guessing = False
+        while not stop_guessing:
+            test_parameters = {"A": args.A, "B": args.B, "C": args.C,
+                          "D": args.D, "E": args.E, "F": args.F,
+                          "G": args.G, "H": args.H, "a": 0, "r": max_r_guesses[-1]}
+            simulation = Simulation(params=test_parameters, mode=args.mode,
+                                    save_path=str(save_path) if args.save_path is None else args.save_path,
+                                    discretization_volume=args.discretization_volume,
+                                    discretization_damage=args.discretization_damage)
+            simulation.matrix /= simulation.matrix.sum()
+            simulation.phi = 1
+            simulation.run(args.niterations, save=False)
+            a0_convergence = simulation.convergence_estimate
+            if type(a0_convergence) == list:
+                a0_convergence = a0_convergence[0]
+
+            test_parameters = {"A": args.A, "B": args.B, "C": args.C,
+                          "D": args.D, "E": args.E, "F": args.F,
+                          "G": args.G, "H": args.H, "a": 1, "r": max_r_guesses[-1]}
+            simulation = Simulation(params=test_parameters, mode=args.mode,
+                                    save_path=str(save_path) if args.save_path is None else args.save_path,
+                                    discretization_volume=args.discretization_volume,
+                                    discretization_damage=args.discretization_damage)
+            simulation.matrix /= simulation.matrix.sum()
+            simulation.phi = 1
+            simulation.run(args.niterations, save=False)
+            a1_convergence = simulation.convergence_estimate
+            if type(a1_convergence) == list:
+                a1_convergence = a1_convergence[0]
+            if int(a0_convergence) != int(a1_convergence):
+                stop_guessing = True
+            else:
+                max_r_guesses.append(max_r_guesses[-1] / args.r)
+        if len(max_r_guesses) > 1:
+            max_r = max_r_guesses[-2]
+        else:
+            max_r = max_r_guesses[-1]
     for a in np.linspace(0, 1, args.a):
         for r in np.linspace(0, max_r, args.r):
             # Do not rerun already existing estimations
@@ -549,7 +584,7 @@ if __name__ == "__main__":
             matrix, phi = simulation.run(args.niterations)
     df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
     rr = np.linspace(0, args.D, args.r)
-    if len(rr) > 1:
+    if len(rr) > 1 and args.H == 0:
         r_step = rr[1] - rr[0]
         max_r = max(df[1])
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
@@ -575,6 +610,9 @@ if __name__ == "__main__":
                 logging.info(f"starting simulation with params: {parameters}")
                 matrix, phi = simulation.run(args.niterations)
             df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
+
+
+
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
 
