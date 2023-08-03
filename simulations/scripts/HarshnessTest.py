@@ -1,5 +1,3 @@
-import atexit
-
 import numpy as np
 from scipy.signal import argrelmin, argrelmax
 import logging
@@ -119,7 +117,7 @@ def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
                              q.reshape(1, len(q)) * F_prime) * delta_t * matrix
-    add_to_damage_harshness = those_that_accumulate[:, -1].sum()
+    add_to_damage_harshness = 0 #those_that_accumulate[:, -1].sum()
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)
     # print("damage_before", (those_that_accumulate*q.reshape(1, len(q))).sum())
@@ -385,7 +383,7 @@ class Simulation:
             self.history.record()
             logging.info(
                 f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}, "
-                f"ksi={self.ksi}")
+                f"ksi={self.ksi}, harshness={self.harshness}")
             self.check_convergence_v2()
         self.delta_t *= 2
         self.delta_t = min(self.delta_t, 0.01)

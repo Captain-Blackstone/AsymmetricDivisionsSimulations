@@ -11,7 +11,7 @@ class Drawer:
     def __init__(self, simulation_thread):
         self.simulation = simulation_thread
         self.update_time = 500  # number of steps between figure updates
-        self.resolution = 25  # number of steps between data collection events
+        self.resolution = 150  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
         self.timeline = []
         plt.ion()
@@ -27,7 +27,7 @@ class Drawer:
                  lambda: (self.simulation.rhos * self.simulation.matrix/self.simulation.matrix.sum()).sum() if self.simulation.matrix.sum() > 0 else 0},
             {"ax_num": [2, 0], "color": "orange", "alpha": 1, "label": "Nutrient concentration",
              "update_function":
-                 lambda: self.simulation.phi
+                 lambda: self.simulation.ksi
              },
 
         ]
