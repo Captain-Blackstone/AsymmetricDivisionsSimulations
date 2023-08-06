@@ -16,20 +16,23 @@ import warnings
 def get_peaks(lst: list):
     peaks = np.array(lst)[sorted(list(argrelmin(np.array(lst))[0]) + list(argrelmax(np.array(lst))[0]))]
     return peaks
-    
+
+
 def peak_distance(peaks):
     return np.abs(np.ediff1d(peaks))
-    
+
+
 def peak_distance_dynamics(peaks):
     peak_d = peak_distance(peaks)
     return np.ediff1d(peak_d)
 
+
 def strictly_increasing(L):
     return all(x<y for x, y in zip(L, L[1:]))
 
+
 def strictly_decreasing(L):
     return all(x>y for x, y in zip(L, L[1:]))
-
 
 
 def convergence(peaks):
@@ -49,6 +52,7 @@ def convergence(peaks):
     else:
         return "not converged"
 
+
 def equilibrium_N(peaks):
     if len(peaks) == 0 or peaks[-1] < 1:
         return 0
@@ -56,6 +60,7 @@ def equilibrium_N(peaks):
         return (peaks[-1] + peaks[-2])/2
     elif len(peaks) == 1:
         return peaks[0]
+
 
 @jit(nopython=True)
 def update_nutrient(matrix: np.array, phi: float, B: float, C: float, p: np.array, delta_t: float) -> float:
@@ -72,9 +77,9 @@ def update_phage(matrix: np.array,
     sucked_by_cells = C * ksi * (matrix * p.reshape(len(p), 1)).sum() * delta_t
     exiting_from_cells_by_death = H * (damage_death_rate * matrix * q.reshape(1, len(q))).sum() * delta_t
     exiting_from_cells_by_accumulation = H * \
-                                          ((np.zeros((len(p), len(q))) +
-                                            p.reshape(len(p), 1) * C * ksi +
-                                            q.reshape(1, len(q)) * F)[:, -1].sum() * q[-1]) * delta_t
+                                          ((matrix*(np.zeros((len(p), len(q))) +
+                                                     p.reshape(len(p), 1) * C * ksi +
+                                                     q.reshape(1, len(q)) * F))[:, -1].sum() * q[-1]) * delta_t
     new_ksi = ksi - diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation
     return new_ksi
 
@@ -83,7 +88,9 @@ def update_phage(matrix: np.array,
 def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: float) -> np.array:
     those_that_die_from_dilution = B * delta_t * matrix
     those_that_die_from_damage = damage_death_rate * delta_t * matrix
-    return those_that_die_from_dilution + those_that_die_from_damage
+    burst_size = ((matrix.sum(axis=0) / matrix.sum()) *
+                  np.arange(matrix.shape[1])).sum()
+    return those_that_die_from_dilution + those_that_die_from_damage, burst_size
 
 
 @jit(nopython=True)
@@ -99,13 +106,12 @@ def accumulate_damage(matrix: np.array, C: float, D: float, F: float, H: float,
                       ksi: float, delta_t: float,
                       p: np.array, q: np.array
                       ) -> (np.array, np.array):
-    F_prime = F
     D_prime = D * len(q)
     if H > 0:
         D_prime += ksi*C
     those_that_accumulate = (np.zeros((len(p), len(q))) +
                              p.reshape(len(p), 1) * D_prime +
-                             q.reshape(1, len(q)) * F_prime) * delta_t * matrix
+                             q.reshape(1, len(q)) * F) * delta_t * matrix
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)
     return those_that_accumulate, where_to_accumulate
@@ -135,7 +141,6 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
         matrix[0, where_to_divide_2[k]] += those_that_divide[k]
 
     matrix[-1, :] -= those_that_divide
-
     return matrix
 
 
@@ -166,11 +171,13 @@ class Simulation:
             self.drawer = Drawer(self)
 
         self.params = params
+        # TODO
+        self.params["F"] /= 500
         self.p = np.linspace(1, 2, discretization_volume)
-        self.q = np.linspace(0, 1, discretization_damage)
+        self.q = np.arange(discretization_damage)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.rhos = np.outer(1 / self.p, self.q)
+            self.rhos = np.outer(1 / self.p, self.q/(len(self.q)-1))
             self.damage_death_rate = (self.rhos / (1 - self.rhos)) ** self.params["G"]
             self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
                 ~np.isinf(self.damage_death_rate)].max()
@@ -207,6 +214,7 @@ class Simulation:
         self.convergence_estimate = None
         self.prev = 0
         self.prev_popsize = (self.matrix*self.rhos/self.matrix.sum()).sum()
+        self.burst_size = 0
 
     @staticmethod
     def alarm_matrix(matrix: np.array) -> None:
@@ -314,7 +322,7 @@ class Simulation:
 
 
         logging.debug("nutrient checked")
-        death_from = death(self.matrix, self.damage_death_rate, self.params["B"], self.delta_t)
+        death_from, self.burst_size = death(self.matrix, self.damage_death_rate, self.params["B"], self.delta_t)
         grow_from, grow_to = grow(self.matrix, self.phi, self.params["A"],
                                   self.params["r"], self.params["E"],
                                   self.p, self.delta_t, self.q)
@@ -417,6 +425,7 @@ class History:
         Path(self.save_path).mkdir(exist_ok=True)
         self.starting_time = tm.time()
         self.phage_history = []
+        self.burst_sizes = []
 
     def record(self) -> None:
         self.population_sizes.append(self.simulation.matrix.sum())
@@ -424,6 +433,7 @@ class History:
         self.real_times.append(tm.time() - self.starting_time)
         if self.simulation.params["H"] > 0:
             self.phage_history.append(self.simulation.ksi)
+            self.burst_sizes.append(self.simulation.burst_size)
 
     def get_peaks(self) -> (np.array, np.array, np.array, np.array):
         popsizes, times = np.array(self.population_sizes), np.array(self.times)
@@ -455,6 +465,13 @@ class History:
             else:
                 ksi = self.phage_history[-1]
             text += "," + str(round(ksi, 5))
+            peaks = get_peaks(self.burst_sizes)
+            if len(peaks) > 1:
+                burst_size = (peaks[-2] + peaks[-1]) / 2
+            else:
+                burst_size = self.phage_history[-1]
+            text += "," + str(round(burst_size, 5))
+
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(text + "\n")
         with open(f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
@@ -466,6 +483,7 @@ class History:
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
             if self.simulation.params["H"] > 0:
                 fl.write(",".join(list(map(str, self.phage_history))) + '\n')
+                fl.write(",".join(list(map(str, self.burst_sizes))) + '\n')
 
 
 def write_completion(save_path):
@@ -519,6 +537,7 @@ if __name__ == "__main__":
         max_r_guesses = [min(args.F/100, args.E)]
         stop_guessing = False
         while not stop_guessing:
+            print(max_r_guesses[-1])
             test_parameters = {"A": args.A, "B": args.B, "C": args.C,
                           "D": args.D, "E": args.E, "F": args.F,
                           "G": args.G, "H": args.H, "a": 0, "r": max_r_guesses[-1]}
@@ -550,19 +569,25 @@ if __name__ == "__main__":
                 stop_guessing = True
             else:
                 max_r_guesses.append(max_r_guesses[-1] / args.r)
+            logging.info(str(max_r_guesses))
         if len(max_r_guesses) > 1:
             max_r = max_r_guesses[-2]
         else:
             max_r = max_r_guesses[-1]
-    for a in np.linspace(0, 1, args.a):
-        for r in np.linspace(0, max_r, args.r):
+    a_neutral = False
+    for r in np.linspace(0, max_r , args.r):
+        equilibria = []
+        for a in np.linspace(0, 1, args.a):
             # Do not rerun already existing estimations
             estimates_file = (Path(save_path)/Path("population_size_estimate.txt"))
             if estimates_file.exists():
                 print(str(estimates_file))
                 estimates = pd.read_csv(str(estimates_file), sep=",", header=None)
-                if len(estimates.loc[(abs(estimates[0] - a) < 1e-5) & (abs(estimates[1] - r) < 1e-5), :]) > 0:
+                relevant_estimates = estimates.loc[(abs(estimates[0] - a) < 1e-5) & (abs(estimates[1] - r) < 1e-5), :]
+                if len(relevant_estimates) > 0:
                     logging.info(f"skipping a={a}, r={r}, estimate already exists")
+                    if list(relevant_estimates[3])[0] == True:
+                        equilibria.append(list(relevant_estimates[2])[0])
                     continue
 
             parameters = {"A": args.A, "B": args.B, "C": args.C,
@@ -582,15 +607,24 @@ if __name__ == "__main__":
                 simulation.phi = 1
             logging.info(f"starting simulation with params: {parameters}")
             matrix, phi = simulation.run(args.niterations)
+            convergence_estimate = simulation.convergence_estimate
+            if type(convergence_estimate) == list:
+                convergence_estimate = convergence_estimate[0]
+            if type(convergence_estimate) == float:
+                equilibria.append(round(convergence_estimate))
+        a_neutral = len(set(equilibria)) == 1 and len(equilibria) == args.a
+        if a_neutral:
+            break
     df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
     rr = np.linspace(0, args.D, args.r)
-    if len(rr) > 1 and args.H == 0:
+    if len(rr) > 1 and args.H == 0 and not a_neutral:
         r_step = rr[1] - rr[0]
         max_r = max(df[1])
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
             r_step *= 2
             r = min(max_r + r_step, args.E)
             max_r = r
+            equilibria = []
             for a in np.linspace(0, 1, args.a):
                 parameters = {"A": args.A, "B": args.B, "C": args.C,
                               "D": args.D, "E": args.E, "F": args.F,
@@ -609,10 +643,15 @@ if __name__ == "__main__":
                     simulation.phi = 1
                 logging.info(f"starting simulation with params: {parameters}")
                 matrix, phi = simulation.run(args.niterations)
+                convergence_estimate = simulation.convergence_estimate
+                if type(convergence_estimate) == list:
+                    convergence_estimate = convergence_estimate[0]
+                if type(convergence_estimate) == float:
+                    equilibria.append(round(convergence_estimate))
+            a_neutral = len(set(equilibria)) == 1 and len(equilibria) == args.a
+            if a_neutral:
+                break
             df = pd.read_csv(f"{save_path}/population_size_estimate.txt", header=None)
-
-
-
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
 
