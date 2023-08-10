@@ -73,7 +73,4 @@ def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.a
 
 def clear_nonexistent(matrix: np.array, rhos: np.array):
     matrix[rhos >= 0.97] = 0
-    # matrix[:, 851:] = 0
-    # matrix[matrix < 1e-30] = 0
-    # matrix[matrix < matrix.max()/1e300] = 0
     return matrix

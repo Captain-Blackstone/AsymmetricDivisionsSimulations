@@ -174,6 +174,10 @@ class Simulation:
         self.delta_t *= 2
         self.delta_t = min(self.delta_t, 0.01)
 
+    def clear_nonexistent(self):
+        self.proposed_new_matrix = clear_nonexistent(matrix=self.proposed_new_matrix, rhos=self.rhos)
+
+
     def step(self, step_number: int):
         # self.delta_t = 0.001
         logging.debug(f"trying delta_t = {self.delta_t}")
@@ -206,7 +210,7 @@ class Simulation:
                      - repair_from + repair_to
 
         self.proposed_new_matrix = divide(matrix=self.proposed_new_matrix, q=self.q, a=self.params["a"])
-        self.proposed_new_matrix = clear_nonexistent(matrix=self.proposed_new_matrix, rhos=self.rhos)
+        self.clear_nonexistent()
         logging.debug("checking combination")
         self.alarm_matrix(self.proposed_new_matrix)
         logging.debug("combination checked")

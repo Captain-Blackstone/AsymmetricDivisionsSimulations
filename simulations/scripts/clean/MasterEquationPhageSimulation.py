@@ -16,6 +16,7 @@ class PhageSimulation(Simulation):
         self.ksi = np.random.random()
         self.history = PhageHistory(self, save_path=save_path)
         self.proposed_new_ksi = None
+        self.exited_phages = 0
 
     @staticmethod
     def alarm_ksi(scalar: float) -> None:
@@ -30,6 +31,10 @@ class PhageSimulation(Simulation):
                                 delta_t=self.delta_t,
                                 p=self.p, q=self.q)
 
+    def clear_nonexistent(self):
+        self.proposed_new_matrix, self.exited_phages = clear_nonexistent(matrix=self.proposed_new_matrix,
+                                                                         rhos=self.rhos)
+
     def step(self, step_number: int):
         accept_step = super().step(step_number)
         self.proposed_new_ksi = update_phage(matrix=self.matrix,
@@ -37,6 +42,7 @@ class PhageSimulation(Simulation):
                                              ksi=self.ksi,
                                              B=self.params["B"], C=self.params["C"], F=self.params["F"],
                                              p=self.p, q=self.q,
+                                             exited_phages=self.exited_phages,
                                              delta_t=self.delta_t)
         self.alarm_ksi(self.proposed_new_ksi)
         return accept_step
