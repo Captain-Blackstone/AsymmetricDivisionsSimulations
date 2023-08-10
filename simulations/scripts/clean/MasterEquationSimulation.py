@@ -215,7 +215,7 @@ class Simulation:
 
     def run(self, n_steps: int, save=True) -> (np.array, float):
         starting_time = tm.time()
-        max_time = 60 * 10
+        max_time = 60 * 20
         try:
             if self.mode in ["local", "interactive"]:
                 iterator = tqdm(range(n_steps))
