@@ -218,6 +218,7 @@ class Simulation:
         return accept_step
 
     def run(self, n_steps: int, save=True) -> (np.array, float):
+        self.last_record_n = self.matrix.sum()
         starting_time = tm.time()
         max_time = 60 * 20
         try:
@@ -238,7 +239,8 @@ class Simulation:
                         logging.warning("No way to make the next step")
                         self.delta_t = 1e-20
                 self.upkeep_after_step()
-                if step_number % 2000 == 0:
+                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or step_number % 5000 == 0:
+                    self.last_record_n = self.matrix.sum()
                     self.history.record()
                     logging.info(self.get_logging_text)
                     self.check_convergence_v2()
