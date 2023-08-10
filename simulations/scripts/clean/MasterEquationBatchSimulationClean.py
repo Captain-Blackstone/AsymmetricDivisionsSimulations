@@ -6,7 +6,7 @@ import logging
 import argparse
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kwargs):
@@ -26,7 +26,7 @@ def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kw
                                               params=params, **kwargs)
             if a_neutral:
                 break
-            df = pd.read_csv(path, header=None)
+            df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
 
 
 if __name__ == "__main__":
