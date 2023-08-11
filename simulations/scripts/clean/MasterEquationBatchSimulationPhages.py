@@ -50,7 +50,7 @@ if __name__ == "__main__":
     if args.debug:
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
 
     if args.mode in ["local", "interactive"]:
         save_path = f"../../data/master_equation/" \

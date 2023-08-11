@@ -240,10 +240,11 @@ class Simulation:
                         self.delta_t = 1e-20
                 self.upkeep_after_step()
                 if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or step_number % 5000 == 0:
-                    self.last_record_n = self.matrix.sum()
-                    self.history.record()
-                    logging.info(self.get_logging_text)
-                    self.check_convergence_v2()
+                    if np.random.uniform() < 0.1:
+                        self.last_record_n = self.matrix.sum()
+                        self.history.record()
+                        logging.info(self.get_logging_text)
+                        self.check_convergence_v2()
                 if self.converged:
                     break
                 if self.mode == "interactive":
