@@ -57,3 +57,12 @@ def equilibrium_N(peaks):
         return (peaks[-1] + peaks[-2]) / 2
     elif len(peaks) == 1:
         return peaks[0]
+
+
+def equilibrium_N_phages(peaks):
+    if len(peaks) == 0 or peaks[-1] < 1:
+        return 0
+    elif len(peaks) >= 2:
+        return np.sqrt(peaks[-1] * peaks[-2])
+    elif len(peaks) == 1:
+        return peaks[0]

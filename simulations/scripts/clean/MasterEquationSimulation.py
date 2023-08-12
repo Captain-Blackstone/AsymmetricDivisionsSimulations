@@ -10,7 +10,7 @@ import traceback
 import warnings
 import logging
 from tqdm import tqdm
-from master_interactive_mode_clean import Drawer
+# from master_interactive_mode_clean import Drawer
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -163,7 +163,7 @@ class Simulation:
                 peaks = get_peaks(self.history.population_sizes)
                 if convergence(peaks) == "cycle":
                     self.converged = True
-                    self.convergence_estimate = equilibrium_N(peaks)
+                    self.convergence_estimate = self.equilibrium_N(peaks)
                     logging.info("got a cycle")
 
     def upkeep_after_step(self) -> None:
@@ -177,6 +177,8 @@ class Simulation:
     def clear_nonexistent(self):
         self.proposed_new_matrix = clear_nonexistent(matrix=self.proposed_new_matrix, rhos=self.rhos)
 
+    def equilibrium_N(self, peaks):
+        return equilibrium_N(peaks)
 
     def step(self, step_number: int):
         # self.delta_t = 0.001
@@ -217,7 +219,11 @@ class Simulation:
         accept_step = True
         return accept_step
 
+    def prepare_to_run(self):
+        pass
+
     def run(self, n_steps: int, save=True) -> (np.array, float):
+        self.prepare_to_run()
         self.last_record_n = self.matrix.sum()
         starting_time = tm.time()
         max_time = 60 * 20
@@ -226,6 +232,7 @@ class Simulation:
                 iterator = tqdm(range(n_steps))
             else:
                 iterator = range(n_steps)
+            last_recorded = 0
             for step_number in iterator:
                 accept_step = False
                 while not accept_step:
@@ -239,12 +246,13 @@ class Simulation:
                         logging.warning("No way to make the next step")
                         self.delta_t = 1e-20
                 self.upkeep_after_step()
-                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or step_number % 5000 == 0:
-                    if np.random.uniform() < 0.1:
-                        self.last_record_n = self.matrix.sum()
-                        self.history.record()
-                        logging.info(self.get_logging_text)
-                        self.check_convergence_v2()
+                last_recorded += 1
+                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.2 or last_recorded == 1000:
+                    self.last_record_n = self.matrix.sum()
+                    last_recorded = 0
+                    self.history.record()
+                    logging.info(self.get_logging_text)
+                    self.check_convergence_v2()
                 if self.converged:
                     break
                 if self.mode == "interactive":
@@ -287,7 +295,7 @@ class History:
         if self.simulation.convergence_estimate is None:
             peaks = get_peaks(self.population_sizes)
             if convergence(peaks) in ["converged", "cycle"]:
-                convergence_estimate = equilibrium_N(peaks)
+                convergence_estimate = self.simulation.equilibrium_N(peaks)
             else:
                 convergence_estimate = self.simulation.matrix.sum()
         else:

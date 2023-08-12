@@ -43,6 +43,9 @@ class HarhnessSimulation(Simulation):
         self.history = HarshnessHistory(simulation_obj=self, save_path=save_path)
         self.harshness = 0
 
+    def equilibrium_N(self, peaks):
+        return equilibrium_N(peaks)
+
     def check_convergence_v2(self):
         critical_period = self.max_delta_t * 10000
         logging.info(f"checking convergence, critical period - {critical_period}")
@@ -60,7 +63,7 @@ class HarhnessSimulation(Simulation):
                 peaks = get_peaks(self.history.harshnesses)
                 if convergence(peaks) == "cycle":
                     self.converged = True
-                    self.convergence_estimate = equilibrium_N(peaks)
+                    self.convergence_estimate = self.equilibrium_N(peaks)
                     logging.info("got a cycle")
                 minima, maxima, t_minima, t_maxima = self.history.get_peaks()
                 minima, maxima, t_minima, t_maxima = minima[-min(len(minima), len(maxima)):], \
@@ -194,7 +197,7 @@ class HarshnessHistory(History):
         if self.simulation.convergence_estimate is None:
             peaks = get_peaks(self.population_sizes)
             if convergence(peaks) in ["converged", "cycle"]:
-                convergence_estimate = equilibrium_N(peaks)
+                convergence_estimate = self.simulation.equilibrium_N(peaks)
             else:
                 convergence_estimate = self.simulation.matrix.sum()
         else:
