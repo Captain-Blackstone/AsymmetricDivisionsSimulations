@@ -40,9 +40,9 @@ def convergence(peaks):
             return "converged"
         if len(distance) >= 5 and strictly_increasing(distance[-10:]):
             return "diverging"
-        if (len(distance) >= 10 and (len(set(distance[-3:])) == 1 or
-                                     not strictly_increasing(distance[-10:]) and
-                                     not strictly_decreasing(distance[-10:]))
+        if (len(distance) >= 15 and (len(set(distance[-3:])) == 1 or
+                                     not strictly_increasing(distance[-8:]) and
+                                     not strictly_decreasing(distance[-8:]))
                 and distance[-1] >= 1):
             return "cycle"
         return "undefined"
