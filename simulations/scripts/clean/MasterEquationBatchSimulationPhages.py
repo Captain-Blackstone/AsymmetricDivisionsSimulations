@@ -1,47 +1,148 @@
 from MasterEquationPhageSimulation import PhageSimulation
+from MasterEquationSimulation import Simulation
 from command_line_interface_functions import *
 import atexit
 import logging
 import argparse
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
-def guess_max_r(params: dict):
-    max_r_guesses = [min(params["F"] / 100, params["E"])]
+
+def check_all_asymmetries(repair: float,
+                          a_steps: int,
+                          params: dict,
+                          path,
+                          fixed_ksi=False,
+                          starting_matrix=None,
+                          starting_phi=None,
+                          **kwargs) -> (bool, bool, np.array, float):
+    parameters = params.copy()
+    if path != "":
+        estimates_file = f"{path}/population_size_estimate.txt"
+    equilibria = []
+    matrix, phi = starting_matrix, starting_phi
+    phage_free_parameters = parameters.copy()
+    phage_free_parameters["D"] = 0
+    phage_free_parameters["F"] = 0
+    phage_free_parameters["a"] = 0
+    phage_free_parameters["r"] = repair
+    # Initializing from a phage-free population equilibrium
+    simulation = Simulation(params=phage_free_parameters, save_path=path, **kwargs)
+
+    # Initialize from previous state
+    if matrix is not None and phi is not None and matrix.sum() > 0:
+        if matrix.sum() < 1:
+            matrix = matrix / matrix.sum()
+        simulation.matrix = matrix
+        simulation.phi = phi
+
+    logging.info(f"starting phage-free simulation with params: {simulation.params}")
+    matrix, phi = simulation.run(1000000000000000000, save=False)
+
+    for a in np.linspace(0, 1, a_steps):
+
+        # Do not rerun already existing estimations
+        if path != "":
+            current_estimate = get_estimate(file=estimates_file, a_val=a, r_val=repair)
+            if current_estimate is not None:
+                equilibria.append(round(current_estimate))
+                continue
+
+        parameters["a"] = round(a, 5)
+        parameters["r"] = repair
+
+        simulation = PhageSimulation(params=parameters, save_path=path, **kwargs)
+        # Initialize from phage free state
+        if matrix is not None and phi is not None and matrix.sum() > 0:
+            if matrix.sum() < 1:
+                matrix = matrix / matrix.sum()
+            simulation.matrix = matrix
+            simulation.phi = phi
+        if fixed_ksi:
+            simulation.ksi = 1
+        # Run the simulation
+        logging.info(f"starting phage simulation with params: {simulation.params}")
+        simulation.run(1000000000000000000, save=True if path != "" else False)
+
+        # Add equilibrium population size for this value of asymmetry to the list
+        if simulation.convergence_estimate is not None:
+            equilibria.append(round(simulation.convergence_estimate))
+
+    # If for given value of repair asymmetry is neutral, stop scanning, we know the rest of the landscape
+    a_neutral = len(set(equilibria)) == 1 and len(equilibria) == a_steps and equilibria[0] > 1
+    death = all([el < 1 for el in equilibria])
+    return a_neutral, death, matrix, phi
+
+
+def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
+    max_r_guesses = [min(params["F"] / 100, params["E"] / repair_steps)]
     stop_guessing = False
     test_parameters = params.copy()
+    dead_guesses = []
     while not stop_guessing:
-        test_parameters["r"] = max_r_guesses[-1]
+        # test_parameters["r"] = max_r_guesses[-1]
+        print("trying", max_r_guesses[-1])
         convergence_estimates = dict()
-        for asymmetry in [0, 1]:
-            test_parameters["a"] = asymmetry
-            simulation = PhageSimulation(params=test_parameters, mode=args.mode,
-                                         save_path=str(save_path) if args.save_path is None else args.save_path,
-                                         discretization_volume=args.discretization_volume,
-                                         discretization_damage=args.discretization_damage)
-            simulation.matrix /= simulation.matrix.sum()
-            simulation.phi = 1
-            simulation.ksi = 1
-            logging.info(f"running simulation with params {simulation.params}")
-            simulation.run(args.niterations, save=False)
-            convergence_estimates[asymmetry] = simulation.convergence_estimate
-        if int(convergence_estimates[0]) != int(convergence_estimates[1]):
+        a_neutral, _, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
+                                                    starting_matrix=None,
+                                                    starting_phi=None,
+                                                    fixed_ksi=True,
+                                                    **kwargs)
+        # for asymmetry in [0, 1]:
+        #     test_parameters["a"] = asymmetry
+        #     simulation = PhageSimulation(params=test_parameters, mode=args.mode,
+        #                                  save_path=str(save_path) if args.save_path is None else args.save_path,
+        #                                  discretization_volume=args.discretization_volume,
+        #                                  discretization_damage=args.discretization_damage)
+        #     simulation.matrix /= simulation.matrix.sum()
+        #     simulation.phi = 1
+        #     simulation.ksi = 1
+        #     logging.info(f"running simulation with params {simulation.params}")
+        #     simulation.run(args.niterations, save=False)
+        #     convergence_estimates[asymmetry] = simulation.convergence_estimate
+        # print("symmetry", int(convergence_estimates[0]), "asymmetry", int(convergence_estimates[1]))
+        # if int(convergence_estimates[0]) != int(convergence_estimates[1]):
+        if not a_neutral:
             stop_guessing = True
         else:
-            max_r_guesses.append(max_r_guesses[-1] / args.r)
-        logging.info("Tried so far: " + str(max_r_guesses))
-    print("max_r_guesses: ", max_r_guesses)
-    print("length: ", len(max_r_guesses))
+            max_r_guesses.append(max_r_guesses[-1] / repair_steps)
+            if death and int(convergence_estimates[0]) == int(convergence_estimates[1]) == 0:
+                dead_guesses.append(max_r_guesses)
+        if death and len(dead_guesses) > 50:
+            break
+        logging.info("Tried so far: " + str(max_r_guesses[:-1]))
     if len(max_r_guesses) > 1:
         r_bound = max_r_guesses[-2]
-        print("choosing second to last: ", r_bound)
     else:
         r_bound = max_r_guesses[-1]
-        print("choosing last: ", r_bound)
+    print("choosing ", r_bound, "as max r")
     return r_bound
 
+
+def scan_grid(params: dict,
+              r_steps: int,
+              a_steps: int,
+              path: str,
+              max_r=None,
+              **kwargs):
+    if max_r is None:
+        max_r = min(params["D"], params["E"]) if params.get("D") is not None and params["D"] != 0 else (
+            min(params["F"] / 100, params["E"]))
+    a_neutral = False
+    matrix, phi = None, None
+    for r in np.linspace(0, max_r, r_steps)[1:]:
+        a_neutral, death, matrix, phi = check_all_asymmetries(repair=r,
+                                                              a_steps=a_steps,
+                                                              params=params,
+                                                              path=path,
+                                                              starting_matrix=matrix,
+                                                              starting_phi=phi,
+                                                              **kwargs)
+        if a_neutral:
+            break
+    return a_neutral
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
@@ -62,25 +163,24 @@ if __name__ == "__main__":
     atexit.register(lambda: write_completion(save_path))
     params = {"A": args.A, "B": args.B, "C": args.C, "E": args.E, "F": args.F, "G": args.G}
     logging.info("Checking if phage dies out at r = 0")
-    a_neutral_at_r_0, _, _ = check_all_asymmetries(repair=0,
-                                                   a_steps=args.a,
-                                                   params=params,
-                                                   path=save_path,
-                                                   simulationClass=PhageSimulation,
-                                                   starting_matrix=None,
-                                                   starting_phi=None,
-                                                   mode=args.mode,
-                                                   discretization_volume=args.discretization_volume,
-                                                   discretization_damage=args.discretization_damage)
+    a_neutral_at_r_0, death, _, _ = check_all_asymmetries(repair=0,
+                                                          a_steps=args.a,
+                                                          params=params,
+                                                          path=save_path,
+                                                          starting_matrix=None,
+                                                          starting_phi=None,
+                                                          mode=args.mode,
+                                                          discretization_volume=args.discretization_volume,
+                                                          discretization_damage=args.discretization_damage)
     if a_neutral_at_r_0:
         max_r = args.E
     else:
-        max_r = guess_max_r(params=params)
-    print("My r bound: ", max_r)
+        max_r = guess_max_r(params=params, death=death, mode=args.mode, repair_steps=args.r,
+                            discretization_volume=args.discretization_volume,
+                            discretization_damage=args.discretization_damage)
     a_neutral = scan_grid(params=params,
                           r_steps=args.r, a_steps=args.a,
                           path=save_path,
-                          simulationClass=PhageSimulation,
                           max_r=max_r,
                           mode=args.mode,
                           discretization_volume=args.discretization_volume,

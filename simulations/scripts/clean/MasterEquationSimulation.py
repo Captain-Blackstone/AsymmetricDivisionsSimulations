@@ -251,8 +251,8 @@ class Simulation:
                     self.last_record_n = self.matrix.sum()
                     last_recorded = 0
                     self.history.record()
-                    logging.info(self.get_logging_text)
                     self.check_convergence_v2()
+                    logging.info(self.get_logging_text)
                 if self.converged:
                     break
                 if self.mode == "interactive":
