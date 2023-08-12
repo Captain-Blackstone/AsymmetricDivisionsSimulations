@@ -6,7 +6,7 @@ import logging
 import argparse
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kwargs):
@@ -19,7 +19,7 @@ def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kw
         # While the populations with maximum checked repair survive with at least some degree of asymmetry
         while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
             r_step *= 2
-            r = min(r + r_step, args.E)
+            r = min(r + r_step, params["E"])
             a_neutral, matrix, phi = check_all_asymmetries(repair=r,
                                                            a_steps=args.a,
                                                            path=path,
@@ -30,6 +30,8 @@ def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kw
             if a_neutral:
                 break
             df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+            if r == params["E"]:
+                break
 
 
 if __name__ == "__main__":
