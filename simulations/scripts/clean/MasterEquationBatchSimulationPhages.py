@@ -85,7 +85,7 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
         # test_parameters["r"] = max_r_guesses[-1]
         print("trying", max_r_guesses[-1])
         convergence_estimates = dict()
-        a_neutral, _, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
+        a_neutral, death_with_current_r, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
                                                     starting_matrix=None,
                                                     starting_phi=None,
                                                     fixed_ksi=True,
@@ -104,12 +104,12 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
         #     convergence_estimates[asymmetry] = simulation.convergence_estimate
         # print("symmetry", int(convergence_estimates[0]), "asymmetry", int(convergence_estimates[1]))
         # if int(convergence_estimates[0]) != int(convergence_estimates[1]):
-        if not a_neutral:
-            stop_guessing = True
-        else:
+        if a_neutral:
             max_r_guesses.append(max_r_guesses[-1] / repair_steps)
-            if death and int(convergence_estimates[0]) == int(convergence_estimates[1]) == 0:
+            if death and death_with_current_r:
                 dead_guesses.append(max_r_guesses)
+        else:
+            stop_guessing = True
         if death and len(dead_guesses) > 50:
             break
         logging.info("Tried so far: " + str(max_r_guesses[:-1]))
