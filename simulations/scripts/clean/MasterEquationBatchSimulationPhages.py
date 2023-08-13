@@ -77,14 +77,13 @@ def check_all_asymmetries(repair: float,
 
 
 def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
-    max_r_guesses = [min(params["F"] / 100, params["E"] / repair_steps)]
+    max_r_guesses = [params["E"], min(params["F"] / 100, params["E"] / (repair_steps/2))]
     stop_guessing = False
     test_parameters = params.copy()
     dead_guesses = []
     while not stop_guessing:
         # test_parameters["r"] = max_r_guesses[-1]
         print("trying", max_r_guesses[-1])
-        convergence_estimates = dict()
         a_neutral, death_with_current_r, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
                                                     starting_matrix=None,
                                                     starting_phi=None,
@@ -105,7 +104,7 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
         # print("symmetry", int(convergence_estimates[0]), "asymmetry", int(convergence_estimates[1]))
         # if int(convergence_estimates[0]) != int(convergence_estimates[1]):
         if a_neutral:
-            max_r_guesses.append(max_r_guesses[-1] / repair_steps)
+            max_r_guesses.append(max_r_guesses[-1] / (repair_steps/2) )
             if death and death_with_current_r:
                 dead_guesses.append(max_r_guesses)
         else:
@@ -113,10 +112,7 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
         if death and len(dead_guesses) > 50:
             break
         logging.info("Tried so far: " + str(max_r_guesses[:-1]))
-    if len(max_r_guesses) > 1:
-        r_bound = max_r_guesses[-2]
-    else:
-        r_bound = max_r_guesses[-1]
+    r_bound = max_r_guesses[-2]
     print("choosing ", r_bound, "as max r")
     return r_bound
 
