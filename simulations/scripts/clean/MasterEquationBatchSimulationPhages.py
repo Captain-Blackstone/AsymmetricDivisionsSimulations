@@ -14,7 +14,6 @@ def check_all_asymmetries(repair: float,
                           a_steps: int,
                           params: dict,
                           path,
-                          fixed_ksi=False,
                           starting_matrix=None,
                           starting_phi=None,
                           **kwargs) -> (bool, bool, np.array, float):
@@ -60,8 +59,6 @@ def check_all_asymmetries(repair: float,
                 matrix = matrix / matrix.sum()
             simulation.matrix = matrix
             simulation.phi = phi
-        if fixed_ksi:
-            simulation.ksi = 1
         # Run the simulation
         logging.info(f"starting phage simulation with params: {simulation.params}")
         simulation.run(1000000000000000000, save=True if path != "" else False)
@@ -71,7 +68,7 @@ def check_all_asymmetries(repair: float,
             equilibria.append(round(simulation.convergence_estimate))
 
     # If for given value of repair asymmetry is neutral, stop scanning, we know the rest of the landscape
-    a_neutral = len(set(equilibria)) == 1 and len(equilibria) == a_steps and equilibria[0] > 1
+    a_neutral = len(set(equilibria)) == 1 and len(equilibria) == a_steps
     death = all([el < 1 for el in equilibria])
     return a_neutral, death, matrix, phi
 
@@ -87,22 +84,7 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
         a_neutral, death_with_current_r, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
                                                     starting_matrix=None,
                                                     starting_phi=None,
-                                                    fixed_ksi=True,
                                                     **kwargs)
-        # for asymmetry in [0, 1]:
-        #     test_parameters["a"] = asymmetry
-        #     simulation = PhageSimulation(params=test_parameters, mode=args.mode,
-        #                                  save_path=str(save_path) if args.save_path is None else args.save_path,
-        #                                  discretization_volume=args.discretization_volume,
-        #                                  discretization_damage=args.discretization_damage)
-        #     simulation.matrix /= simulation.matrix.sum()
-        #     simulation.phi = 1
-        #     simulation.ksi = 1
-        #     logging.info(f"running simulation with params {simulation.params}")
-        #     simulation.run(args.niterations, save=False)
-        #     convergence_estimates[asymmetry] = simulation.convergence_estimate
-        # print("symmetry", int(convergence_estimates[0]), "asymmetry", int(convergence_estimates[1]))
-        # if int(convergence_estimates[0]) != int(convergence_estimates[1]):
         if a_neutral:
             max_r_guesses.append(max_r_guesses[-1] / (repair_steps/2) )
             if death and death_with_current_r:

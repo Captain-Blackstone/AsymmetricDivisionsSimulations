@@ -28,9 +28,11 @@ def scan_until_death_or_a_neutral(params: dict, path: str, a_neutral: bool, **kw
                                                            starting_phi=phi,
                                                            params=params, **kwargs)
             if a_neutral:
+                print("a neutral, breaking. max_r: ", r)
                 break
             df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
             if r == params["E"]:
+                print("reached maximum r=E, breaking, r=", r)
                 break
 
 

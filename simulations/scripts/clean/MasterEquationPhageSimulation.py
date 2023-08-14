@@ -83,7 +83,7 @@ class PhageHistory(History):
         else:
             peaks = get_peaks(self.phage_history)
             if len(peaks) > 1:
-                ksi = (peaks[-2] + peaks[-1]) / 2
+                ksi = self.simulation.equilibrium_N(peaks)
             else:
                 ksi = self.phage_history[-1]
         self.text += "," + str(round(ksi, 5))
