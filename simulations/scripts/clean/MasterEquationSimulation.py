@@ -98,7 +98,7 @@ class Simulation:
         return f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}"
 
     def check_convergence_v2(self):
-        critical_period = self.max_delta_t * 10000
+        critical_period = self.max_delta_t * 20000
         # Claiming convergence only if critical period of time passed
         if self.history.times[-1] > critical_period:
             ii = (-np.array(self.history.times) + self.history.times[-1]) < critical_period
@@ -120,11 +120,12 @@ class Simulation:
                             self.time > self.convergence_estimate_first_order[2] + critical_period / 4 and \
                             len(minima) + len(maxima) != self.convergence_estimate_first_order[1] and \
                             int(self.convergence_estimate_first_order[0]) == int(estimate):
-                        self.converged = True
-                        self.convergence_estimate = self.convergence_estimate_first_order[0]
-                        logging.info(
-                            f"converged, same 1st order convergence estimate {estimate} as before: "
-                            f"{self.convergence_estimate_first_order}")
+                        if abs(maxima[-1] - minima[-1]) < 10:
+                            self.converged = True
+                            self.convergence_estimate = self.convergence_estimate_first_order[0]
+                            logging.info(
+                                f"converged, same 1st order convergence estimate {estimate} as before: "
+                                f"{self.convergence_estimate_first_order}")
                     # Else if there was no 1st order convergence estimate or
                     # there is one and some additional peaks arrived, update the 1st order convergence estimate
                     elif self.convergence_estimate_first_order is None or \
@@ -152,14 +153,15 @@ class Simulation:
                             len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]
                             and
                             int(self.convergence_estimate_second_order[0]) == int(estimate)):
-                        self.converged = True
-                        self.convergence_estimate = self.convergence_estimate_second_order[0]
-                        logging.info(
-                            f"converged, same 2nd order convergence estimate {estimate} as before: {self.convergence_estimate_second_order}")
+                        if abs(smoothed_maxima[-1] - smoothed_minima[-1]) < 10:
+                            self.converged = True
+                            self.convergence_estimate = self.convergence_estimate_second_order[0]
+                            logging.info(
+                                f"converged, same 2nd order convergence estimate {estimate} as before: {self.convergence_estimate_second_order}")
                     elif self.convergence_estimate_second_order is None or self.convergence_estimate_second_order is not None \
                             and len(smoothed_minima) + len(smoothed_maxima) != self.convergence_estimate_second_order[-1]:
                         self.convergence_estimate_second_order = [estimate, len(smoothed_minima) + len(smoothed_maxima)]
-                        # logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
+                        logging.info(f"changing 2nd order convergence estimate: {self.convergence_estimate_second_order}")
                 peaks = get_peaks(self.history.population_sizes)
                 if convergence(peaks) == "cycle":
                     self.converged = True
@@ -226,7 +228,7 @@ class Simulation:
         self.prepare_to_run()
         self.last_record_n = self.matrix.sum()
         starting_time = tm.time()
-        max_time = 60 * 20
+        max_time = 60 * 30
         try:
             if self.mode in ["local", "interactive"]:
                 iterator = tqdm(range(n_steps))
@@ -247,7 +249,7 @@ class Simulation:
                         self.delta_t = 1e-20
                 self.upkeep_after_step()
                 last_recorded += 1
-                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.2 or last_recorded == 1000:
+                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or last_recorded == 100:
                     self.last_record_n = self.matrix.sum()
                     last_recorded = 0
                     self.history.record()

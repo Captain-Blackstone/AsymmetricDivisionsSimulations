@@ -79,7 +79,6 @@ def guess_max_r(params: dict, repair_steps: int, death: bool, **kwargs):
     test_parameters = params.copy()
     dead_guesses = []
     while not stop_guessing:
-        # test_parameters["r"] = max_r_guesses[-1]
         print("trying", max_r_guesses[-1])
         a_neutral, death_with_current_r, _, _, = check_all_asymmetries(repair=max_r_guesses[-1], a_steps=2, params=test_parameters, path="",
                                                     starting_matrix=None,

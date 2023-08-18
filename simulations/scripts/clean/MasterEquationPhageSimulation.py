@@ -13,7 +13,7 @@ class PhageSimulation(Simulation):
                  discretization_volume: int = 251,
                  discretization_damage: int = 251):
         super().__init__(params, save_path, mode, discretization_volume, discretization_damage)
-        self.ksi = np.random.exponential(10000)
+        self.ksi = 1#np.random.exponential(10000)
         self.history = PhageHistory(self, save_path=save_path)
         self.proposed_new_ksi = None
         self.exited_phages = 0
@@ -51,7 +51,7 @@ class PhageSimulation(Simulation):
     def upkeep_after_step(self) -> None:
         super().upkeep_after_step()
         self.ksi = self.proposed_new_ksi
-        if self.matrix.sum() < self.initial_population_size * 0.001:
+        if self.matrix.sum() < self.initial_population_size * 0.05:
             self.converged = True
             self.convergence_estimate = 0
 
