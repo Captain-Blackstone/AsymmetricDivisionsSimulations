@@ -25,7 +25,7 @@ def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: floa
 
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     if args.debug:
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
 
     if args.mode in ["local"]:
         from tqdm import tqdm

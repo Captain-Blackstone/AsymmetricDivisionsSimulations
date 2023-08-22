@@ -4,6 +4,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Harshness Recorder simulator")
     tune_parser(parser)
     args = parser.parse_args()
+    if args.debug:
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+        logging.basicConfig(level=logging.INFO)
     if args.mode in ["local"]:
         from tqdm import tqdm
 
