@@ -5,15 +5,14 @@ import numpy as np
 import pandas as pd
 
 
-def tune_parser(parser: argparse.ArgumentParser, phage=False):
+def tune_parser(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-ni", "--niterations", default=100000, type=int)
     parser.add_argument("--run_name", type=str, default="")
     parser.add_argument("-A", type=float)  # nu * x * phi0
     parser.add_argument("-B", type=float)  # R / V
     parser.add_argument("-C", type=float)  # nu * x / V
-    if not phage:
-        parser.add_argument("-D", type=float)  # d / K ?
+    parser.add_argument("-D", type=float)  # d / K ?
     parser.add_argument("-E", type=float)  # 0 < E <= 1
     parser.add_argument("-F", type=float)  # 0 <= F
     parser.add_argument("-G", type=float)  # G
@@ -35,7 +34,7 @@ def get_estimate(file: str, a_val: float, r_val: float):
     if Path(file).exists():
         print(str(file))
         estimates = pd.read_csv(file, sep=",", header=None)
-        relevant_estimates = estimates.loc[(abs(estimates[0] - a_val) < 1e-5) & (abs(estimates[1] - r_val) < 1e-5), :]
+        relevant_estimates = estimates.loc[(abs(estimates[0] - a_val) < 1e-10) & (abs(estimates[1] - r_val) < 1e-10), :]
         if len(relevant_estimates) > 0:
             logging.info(f"skipping a={a_val}, r={r_val}, estimate already exists")
             return list(relevant_estimates[2])[0]
@@ -62,11 +61,14 @@ def check_all_asymmetries(repair: float,
             equilibria.append(round(current_estimate))
             continue
 
-        parameters["a"] = round(a, 5)
-        parameters["r"] = round(repair, 5)
+        parameters["a"] = round(a, 10)
+        parameters["r"] = round(repair, 10)
         simulation = simulationClass(params=parameters, save_path=path, **kwargs)
 
         # Initialize from previous state
+        if matrix is None and phi is None:
+            matrix, phi = simulation.run(1000000000000000000, save=False)
+            simulation = simulationClass(params=parameters, save_path=path, **kwargs)
         if matrix is not None and phi is not None and matrix.sum() > 0:
             if matrix.sum() < 1:
                 matrix = matrix / matrix.sum()
