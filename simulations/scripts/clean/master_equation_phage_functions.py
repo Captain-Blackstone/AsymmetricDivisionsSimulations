@@ -21,12 +21,14 @@ def update_phage(matrix: np.array,
     return new_ksi
 
 
-def accumulate_phage(matrix: np.array, C: float, F: float,
+def accumulate_phage(matrix: np.array,
+                     C: float,
+                     F: float,
                      ksi: float, delta_t: float,
-                     p: np.array, q: np.array) -> (np.array, np.array):
+                     p: np.array, q: np.array, D=0.0) -> (np.array, np.array):
     # TESTED
     those_that_accumulate = (np.zeros((len(p), len(q))) +
-                             p.reshape(len(p), 1) * ksi * C +
+                             p.reshape(len(p), 1) * (ksi * C + D * len(q)) +
                              q.reshape(1, len(q)) * F) * delta_t * matrix
     where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
                                           those_that_accumulate[:, :-1]), axis=1)

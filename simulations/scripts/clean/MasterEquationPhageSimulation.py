@@ -13,7 +13,7 @@ class PhageSimulation(Simulation):
                  discretization_volume: int = 251,
                  discretization_damage: int = 251):
         super().__init__(params, save_path, mode, discretization_volume, discretization_damage)
-        self.ksi = 1#np.random.exponential(10000)
+        self.ksi = np.random.exponential(10000)
         self.history = PhageHistory(self, save_path=save_path)
         self.proposed_new_ksi = None
         self.exited_phages = 0
@@ -27,7 +27,7 @@ class PhageSimulation(Simulation):
 
     def accumulate_damage(self):
         return accumulate_phage(matrix=self.matrix,
-                                C=self.params["C"], F=self.params["F"],
+                                C=self.params["C"], D=self.params["D"], F=self.params["F"],
                                 ksi=self.ksi,
                                 delta_t=self.delta_t,
                                 p=self.p, q=self.q)
@@ -51,9 +51,9 @@ class PhageSimulation(Simulation):
     def upkeep_after_step(self) -> None:
         super().upkeep_after_step()
         self.ksi = self.proposed_new_ksi
-        if self.matrix.sum() < self.initial_population_size * 0.05:
-            self.converged = True
-            self.convergence_estimate = 0
+        # if self.matrix.sum() < self.initial_population_size * 0.05:
+        #     self.converged = True
+        #     self.convergence_estimate = 0
 
     @property
     def get_logging_text(self):
@@ -66,31 +66,45 @@ class PhageSimulation(Simulation):
     def equilibrium_N(self, peaks):
         return equilibrium_N_phages(peaks)
 
+    def run(self, n_steps: int, save=True) -> (np.array, float):
+        super().run(n_steps, save)
+        return self.matrix, self.phi, self.ksi
+
 
 class PhageHistory(History):
     def __init__(self, simulation_obj: PhageSimulation, save_path: str):
         super().__init__(simulation_obj, save_path)
         self.phage_history = []
+        self.damage_history = []
 
     def record(self) -> None:
         super().record()
         self.phage_history.append(self.simulation.ksi)
+        self.damage_history.append((self.simulation.matrix * self.simulation.q.reshape(1, len(self.simulation.q))).sum())
 
     def prepare_to_save(self) -> None:
         super().prepare_to_save()
         if self.simulation.convergence_estimate == 0:
             ksi = 0
+            dam = 0
         else:
             peaks = get_peaks(self.phage_history)
             if len(peaks) > 1:
                 ksi = self.simulation.equilibrium_N(peaks)
             else:
                 ksi = self.phage_history[-1]
-        self.text += "," + str(round(ksi, 5))
+            peaks = get_peaks(self.damage_history)
+            if len(peaks) > 1:
+                dam = self.simulation.equilibrium_N(peaks)
+            else:
+                dam = self.damage_history[-1]
+
+        self.text += "," + str(round(ksi, 5)) + "," + str(round(dam, 5))
 
     def save(self) -> None:
         super().save()
-        with open(f"{self.save_path}/"
-                  f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
-                  "a") as fl:
-            fl.write(",".join(list(map(str, self.phage_history))) + '\n')
+        # with open(f"{self.save_path}/"
+        #           f"population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+        #           "a") as fl:
+        #     fl.write(",".join(list(map(str, self.phage_history))) + '\n')
+        #     fl.write(",".join(list(map(str, self.damage_history ))) + '\n')
