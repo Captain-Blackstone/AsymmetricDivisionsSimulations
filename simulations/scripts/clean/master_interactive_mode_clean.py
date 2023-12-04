@@ -2,7 +2,7 @@ from interactive_mode import non_blocking_pause
 import matplotlib.pyplot as plt
 import numpy as np
 import atexit
-
+from scipy.signal import argrelmin, argrelmax
 
 class Drawer:
     """
@@ -10,7 +10,7 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation = simulation_thread
-        self.update_time = 500  # number of steps between figure updates
+        self.update_time = 5000  # number of steps between figure updates
         self.resolution = 150  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
         self.timeline = []
@@ -44,7 +44,7 @@ class Drawer:
         matrix_data_dicts = [
             {"ax_num": [2, 1], "label": "Matrix",
              "update_function":
-                 lambda: np.log(self.simulation.matrix)}
+                 lambda: self.simulation.matrix}
         ]
 
 
@@ -67,6 +67,8 @@ class Drawer:
                                  self.ax[*data_dict["ax_num"]],
                                 data_dict["update_function"],
                                 data_dict.get("label")) for data_dict in matrix_data_dicts]
+        # self.reg1, = self.ax[0][0].plot([0, 0], [0, 0], color="red")
+        # self.reg2, = self.ax[0][0].plot([0, 0], [0, 0], color="red")
 
     def damage_update_func(self):
         rhos, counts = self.simulation.rhos.flatten(), self.simulation.matrix.flatten()
@@ -90,6 +92,38 @@ class Drawer:
                 plot.collect_data(time_step_duration)
         # Update figure each self.update_time steps
         if step_number % self.update_time == 0:
+            # population_size = self.simulation.history.population_sizes
+            # time = self.simulation.history.times
+            # slopes, intercepts = [], []
+            # xx1s, xx2s, yy1s, yy2s = [], [], [], []
+            # peaks = None
+            # for xx, yy, func in zip([xx1s, xx2s], [yy1s, yy2s], [argrelmin, argrelmax]):
+            #     peaks = np.array(population_size)[list(func(np.array(population_size))[0])]
+            #     times = np.array(time)[list(func(np.array(population_size))[0])]
+            #     if len(peaks) < 3:
+            #         continue
+            #     else:
+            #         n_points = 3
+            #         peaks = peaks[-n_points:]
+            #         times = times[-n_points:]
+            #         coefficients = np.polyfit(times, peaks, 1)
+            #         slope, intercept = coefficients
+            #         slopes.append(slope)
+            #         intercepts.append(intercept)
+            #         xx.append(times[0])
+            #         yy.append(xx[0] * slope + intercept)
+            # if len(slopes) == 2:
+            #     xx1s.append((intercepts[1]-intercepts[0])/(slopes[0]-slopes[1]))
+            #     xx2s.append((intercepts[1] - intercepts[0]) / (slopes[0] - slopes[1]))
+            #     print("CONVERGENCE ESTIMATE", xx1s[-1]*slopes[0] + intercepts[0])
+            #     yy1s.append(xx1s[-1]*slopes[0] + intercepts[0])
+            #     yy2s.append(xx2s[-1]*slopes[1] + intercepts[1])
+            #     self.reg1.set_xdata(xx1s)
+            #     self.reg1.set_ydata(yy1s)
+            #     self.reg2.set_xdata(xx2s)
+            #     self.reg2.set_ydata(yy2s)
+
+
             for plot in self.plots:
                 plot.update_data()
             for plot in self.plots:
@@ -215,8 +249,40 @@ class MatrixPlot:
         put the current xdata and ydata on the plot
         :return:
         """
-        self.ax.clear()
-        self.ax.imshow(self.ydata, interpolation="none", aspect="auto")
+        try:
+            self.ax.clear()
+            # self.ax.imshow(self.ydata, interpolation="none", aspect="auto")
+            import matplotlib
+            cmap = "Blues"
+            mtx = self.ydata[:-1, :].copy()
+            mtx /= mtx.sum()
+            column_numbers = []
+            row_numbers = []
+            values = []
+
+            for i, row in enumerate(mtx):
+                for j, value in enumerate(row):
+                    column_numbers.append(j)
+                    row_numbers.append(mtx.shape[0] - i)
+                    if np.isnan(value):
+                        value = 0
+                    values.append(value)
+            percentiles = np.array([50, 70, 90, 95, 99, 100])
+            levels = np.percentile(np.array(values), percentiles)
+
+            cmap = matplotlib.cm.get_cmap(cmap)
+            colors_mtx = cmap(percentiles / 100) * 256
+            colors = []
+            for r in range(colors_mtx.shape[0]):
+                r = colors_mtx[r, :]
+                i, j, k, _ = r
+                colors.append('#%02x%02x%02x' % (round(i), round(j), round(k)))
+            #     ax.tricontourf(column_numbers, row_numbers, values,
+            #                    levels=list(range(mtx.min(), mtx.max()+2)),
+            #                    cmap=cmap, vmin=mtx.min(), vmax=mtx.max())
+            self.ax.tricontourf(column_numbers, row_numbers, values, levels=levels, colors=colors)
+        except Exception as e:
+            print(e)
 
     def update_plot(self):
         pass

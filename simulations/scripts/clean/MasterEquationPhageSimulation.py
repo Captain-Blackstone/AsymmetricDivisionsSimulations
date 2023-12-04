@@ -66,10 +66,6 @@ class PhageSimulation(Simulation):
     def equilibrium_N(self, peaks):
         return equilibrium_N_phages(peaks)
 
-    def run(self, n_steps: int, save=True) -> (np.array, float):
-        super().run(n_steps, save)
-        return self.matrix, self.phi, self.ksi
-
 
 class PhageHistory(History):
     def __init__(self, simulation_obj: PhageSimulation, save_path: str):

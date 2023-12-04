@@ -55,7 +55,7 @@ def repair_damage(matrix: np.array, r: float, delta_t: float, p: np.array, q: np
 
 
 @jit(nopython=True)
-def divide(matrix: np.array, q: np.array, a: float) -> (np.array, np.array, np.array):
+def divide(matrix: np.array, q: np.array, a: float) -> np.array:
     those_that_divide = matrix[-1, :]
     damage = np.arange(len(q))
     where_to_divide_1 = damage * (1 - a) / 2

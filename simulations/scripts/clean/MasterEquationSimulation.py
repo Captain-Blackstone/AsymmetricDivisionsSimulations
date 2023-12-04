@@ -93,6 +93,15 @@ class Simulation:
                                  self.params["F"], self.delta_t,
                                  self.p, self.q)
 
+    def death(self):
+        return death(matrix=self.matrix,
+                     damage_death_rate=self.damage_death_rate,
+                     B=self.params["B"],
+                     delta_t=self.delta_t)
+
+    def divide(self):
+        return divide(matrix=self.proposed_new_matrix, q=self.q, a=self.params["a"])
+
     @property
     def get_logging_text(self):
         return f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}"
@@ -195,10 +204,7 @@ class Simulation:
 
         self.alarm_phi(self.proposed_new_phi)
         logging.debug("nutrient checked")
-        death_from = death(matrix=self.matrix,
-                           damage_death_rate=self.damage_death_rate,
-                           B=self.params["B"],
-                           delta_t=self.delta_t)
+        death_from = self.death()
         grow_from, grow_to = grow(matrix=self.matrix,
                                   phi=self.phi,
                                   A=self.params["A"],
@@ -213,7 +219,7 @@ class Simulation:
         self.proposed_new_matrix = self.matrix - death_from - grow_from + grow_to - accumulate_from + accumulate_to \
                      - repair_from + repair_to
 
-        self.proposed_new_matrix = divide(matrix=self.proposed_new_matrix, q=self.q, a=self.params["a"])
+        self.proposed_new_matrix = self.divide()
         self.clear_nonexistent()
         logging.debug("checking combination")
         self.alarm_matrix(self.proposed_new_matrix)
@@ -224,7 +230,7 @@ class Simulation:
     def prepare_to_run(self):
         pass
 
-    def run(self, n_steps: int, save=True) -> (np.array, float):
+    def run(self, n_steps: int, save=True):
         self.prepare_to_run()
         self.last_record_n = self.matrix.sum()
         starting_time = tm.time()
@@ -249,7 +255,7 @@ class Simulation:
                         self.delta_t = 1e-20
                 self.upkeep_after_step()
                 last_recorded += 1
-                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or last_recorded == 100:
+                if abs(self.matrix.sum() - self.last_record_n) > self.last_record_n*0.1 or last_recorded == 50:
                     self.last_record_n = self.matrix.sum()
                     last_recorded = 0
                     self.history.record()
@@ -266,7 +272,6 @@ class Simulation:
             self.history.record()
             if save:
                 self.history.save()
-        return self.matrix, self.phi
 
 
 class History:

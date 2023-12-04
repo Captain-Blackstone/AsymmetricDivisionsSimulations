@@ -1,4 +1,4 @@
-from MasterEquationSimulation import Simulation
+from MasterEquationSimulationPCD import PCDSimulation
 from command_line_interface_functions import *
 import atexit
 import logging
@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.WARNING)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="MasterEquation simulator")
+    parser = argparse.ArgumentParser(prog="MasterEquation simulator PCD")
     tune_parser(parser)
     args = parser.parse_args()
     if args.debug:
@@ -29,7 +29,7 @@ if __name__ == "__main__":
                                   "D": args.D, "E": args.E, "F": args.F, "G": args.G},
                           r_steps=args.r, a_steps=args.a,
                           path=save_path,
-                          simulationClass=Simulation,
+                          simulationClass=PCDSimulation,
                           mode=args.mode,
                           discretization_volume=args.discretization_volume,
                           discretization_damage=args.discretization_damage)
@@ -39,7 +39,7 @@ if __name__ == "__main__":
                                   path=save_path,
                                   mode=args.mode,
                                   a_steps=args.a,
-                                  simulationClass=Simulation,
+                                  simulationClass=PCDSimulation,
                                   discretization_volume=args.discretization_volume,
                                   discretization_damage=args.discretization_damage)
     find_the_peak(params={"A": args.A, "B": args.B, "C": args.C,
@@ -47,7 +47,7 @@ if __name__ == "__main__":
                           path=save_path,
                           mode=args.mode,
                           a_steps=args.a,
-                          simulationClass=Simulation,
+                          simulationClass=PCDSimulation,
                           discretization_volume=args.discretization_volume,
                           discretization_damage=args.discretization_damage)
     with open(f"{save_path}/scanning.txt", "a") as fl:

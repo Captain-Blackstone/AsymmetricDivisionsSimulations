@@ -4,6 +4,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from MasterEquationPhageSimulation import PhageSimulation
+from MasterEquationSimulationPCD import PCDSimulation
 
 def tune_parser(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
@@ -41,18 +43,24 @@ def get_estimate(file: str, a_val: float, r_val: float):
     return None
 
 
+def initialize_conditions_dictionary(simulationClass) -> dict:
+    conditions = {"matrix": None,
+                  "phi": None}
+    if simulationClass in [PhageSimulation, PCDSimulation]:
+        conditions["ksi"] = None
+    return conditions
+
+
 def check_all_asymmetries(repair: float,
                           a_steps: int,
                           params: dict,
                           path: str,
                           simulationClass,
-                          starting_matrix=None,
-                          starting_phi=None,
+                          conditions: dict,
                           **kwargs) -> (bool, np.array, float):
     parameters = params.copy()
     estimates_file = f"{path}/population_size_estimate.txt"
     equilibria = []
-    matrix, phi = starting_matrix, starting_phi
     for a in np.linspace(0, 1, a_steps):
 
         # Do not rerun already existing estimations
@@ -66,18 +74,24 @@ def check_all_asymmetries(repair: float,
         simulation = simulationClass(params=parameters, save_path=path, **kwargs)
 
         # Initialize from previous state
-        if matrix is None and phi is None:
-            matrix, phi = simulation.run(1000000000000000000, save=False)
+        if any([el is None for el in conditions.values()]):
+            simulation.run(1000000000000000000, save=False)
+            for key in conditions.keys():
+                conditions[key] = getattr(simulation, key)
             simulation = simulationClass(params=parameters, save_path=path, **kwargs)
-        if matrix is not None and phi is not None and matrix.sum() > 0:
-            if matrix.sum() < 1:
-                matrix = matrix / matrix.sum()
-            simulation.matrix = matrix
-            simulation.phi = phi
+        if all([el is not None for el in conditions.values()]) and conditions["matrix"].sum() > 0:
+            if conditions["matrix"].sum() < 1:
+                conditions["matrix"] = conditions["matrix"] / conditions["matrix"].sum()
+            if conditions.get("ksi") is not None and conditions["ksi"] < 1:
+                conditions["ksi"] = 10000
+            for key, val in conditions.items():
+                setattr(simulation, key, val)
 
         # Run the simulation
         logging.info(f"starting simulation with params: {parameters}")
-        matrix, phi = simulation.run(1000000000000000000)
+        simulation.run(1000000000000000000)
+        for key in conditions.keys():
+            conditions[key] = getattr(simulation, key)
 
         # Add equilibrium population size for this value of asymmetry to the list
         if simulation.convergence_estimate is not None:
@@ -85,7 +99,7 @@ def check_all_asymmetries(repair: float,
 
     # If for given value of repair asymmetry is neutral, stop scanning, we know the rest of the landscape
     a_neutral = len(set(equilibria)) == 1 and len(equilibria) == a_steps and equilibria[0] > 1
-    return a_neutral, matrix, phi
+    return a_neutral, conditions
 
 
 def scan_grid(params: dict,
@@ -97,18 +111,96 @@ def scan_grid(params: dict,
               **kwargs):
     if max_r is None:
         max_r = min(params["D"], params["E"]) if params.get("D") is not None and params["D"] != 0 else (
-            min(params["F"] / 100, params["E"]))
+            min(params["F"] / 100, params["E"]/100))
     a_neutral = False
-    matrix, phi = None, None
+    conditions = initialize_conditions_dictionary(simulationClass)
     for r in np.linspace(0, max_r, r_steps):
-        a_neutral, matrix, phi = check_all_asymmetries(repair=r,
-                                                       a_steps=a_steps,
-                                                       params=params,
-                                                       path=path,
-                                                       simulationClass=simulationClass,
-                                                       starting_matrix=matrix,
-                                                       starting_phi=phi,
-                                                       **kwargs)
+        a_neutral, conditions = check_all_asymmetries(repair=r,
+                                                      a_steps=a_steps,
+                                                      params=params,
+                                                      path=path,
+                                                      simulationClass=simulationClass,
+                                                      conditions=conditions,
+                                                      **kwargs)
         if a_neutral:
             break
     return a_neutral
+
+def scan_until_death_or_a_neutral(params: dict,
+                                  path: str,
+                                  a_steps: int,
+                                  a_neutral: bool,
+                                  simulationClass,
+                                  **kwargs):
+    df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+    rr = sorted(df[1].unique())
+    conditions = initialize_conditions_dictionary(simulationClass)
+    if len(rr) > 1 and not a_neutral:
+        r_step = rr[1] - rr[0]
+        r = max(df[1])
+        if len(df.loc[df[1] == r]) < a_steps:
+            a_neutral, conditions = check_all_asymmetries(repair=r,
+                                                          a_steps=a_steps,
+                                                          path=path,
+                                                          simulationClass=simulationClass,
+                                                          conditions=conditions,
+                                                          params=params, **kwargs)
+
+        # While the populations with maximum checked repair survive with at least some degree of asymmetry
+        while len(df.loc[(df[1] == max(df[1])) & (df[2] > 1)]) > 0:
+            r_step *= 2
+            r = min(r + r_step, params["E"])
+            a_neutral, conditions = check_all_asymmetries(repair=r,
+                                                          a_steps=a_steps,
+                                                          path=path,
+                                                          simulationClass=simulationClass,
+                                                          conditions=conditions,
+                                                          params=params, **kwargs)
+            if a_neutral:
+                print("a neutral, breaking. max_r: ", r)
+                break
+            df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+            if r == params["E"]:
+                print("reached maximum r=E, breaking, r=", r)
+                break
+
+def find_the_peak(params: dict, path: str, a_steps: int, simulationClass, **kwargs):
+    df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+    for a in [0, 1]:
+        a_1 = df.loc[df[0] == a].drop_duplicates()
+        rr = np.array(list(a_1.sort_values(1)[1]))
+        popsizes = np.array(list(a_1.sort_values(1)[2]))
+        # The peak is r = 0
+        if all(np.ediff1d(popsizes) < 0):
+            continue
+        if len(np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0]) == 0:
+            continue
+        mag1, mag2 = np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1], np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][0]
+        min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
+        max_r = rr[list(rr).index(min_r) + 2]
+        iteration = 0
+        conditions = initialize_conditions_dictionary(simulationClass)
+        while abs(mag1) > 1 or abs(mag2) > 1:
+            iteration += 1
+            for r in np.linspace(min_r, max_r, 3):
+                a_neutral, conditions = check_all_asymmetries(repair=r,
+                                                              a_steps=a_steps,
+                                                              path=path,
+                                                              simulationClass=simulationClass,
+                                                              conditions=conditions,
+                                                              params=params, **kwargs)
+
+            df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+            a_1 = df.loc[df[0] == 1].drop_duplicates()
+            rr = np.array(list(a_1.sort_values(1)[1]))
+            popsizes = np.array(list(a_1.sort_values(1)[2]))
+            # The peak is r = 0
+            if all(np.ediff1d(popsizes) < 0):
+                break
+
+            mag1, mag2 = np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1], np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][
+                0]
+            min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
+            max_r = rr[list(rr).index(min_r) + 2]
+            if iteration > 20:
+                break

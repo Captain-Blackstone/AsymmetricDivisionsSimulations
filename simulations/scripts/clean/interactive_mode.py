@@ -71,7 +71,6 @@ class Drawer:
                  self.simulation_thread.current_subpopulation is self.simulation_thread.deterministic_simulation else
              self.simulation_thread.stochastic_simulation.phi
              },
-
         ]
         # frequency_data_dicts = [
         #     {"ax_num": int(n_plots + damage_plot), "color": "green", "label": "Asymmetry", "max": 1,
