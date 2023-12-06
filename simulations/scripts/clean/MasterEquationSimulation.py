@@ -316,15 +316,17 @@ class History:
         self.prepare_to_save()
         with open(f"{self.save_path}/population_size_estimate.txt", "a") as fl:
             fl.write(self.text + "\n")
-        # with open(
-        #         f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
-        #         "w") as fl:
-        #     if self.population_sizes[-1] < 1 and all(
-        #             [x >= y for x, y in zip(self.population_sizes, self.population_sizes[1:])]):
-        #         self.times = [self.times[0], self.times[-1]]
-        #         self.population_sizes = [self.population_sizes[0], self.population_sizes[-1]]
+        with open(
+                f"{self.save_path}/population_size_history_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+                "w") as fl:
+            if self.population_sizes[-1] < 1 and all(
+                    [x >= y for x, y in zip(self.population_sizes, self.population_sizes[1:])]):
+                self.times = [self.times[0], self.times[-1]]
+                self.population_sizes = [self.population_sizes[0], self.population_sizes[-1]]
+            else:
+                self.population_sizes = [get_peaks(self.population_sizes)] + [self.population_sizes[-1]]
         #     fl.write(",".join(list(map(str, self.times))) + '\n')
-        #     fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
+            fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
         # with open(f"{self.save_path}/final_state_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:
         #     for el in self.simulation.matrix:
         #         fl.write(" ".join(map(str, el)) + '\n')
