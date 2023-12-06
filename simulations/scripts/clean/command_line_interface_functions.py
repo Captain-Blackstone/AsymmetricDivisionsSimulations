@@ -7,6 +7,7 @@ import pandas as pd
 from MasterEquationPhageSimulation import PhageSimulation
 from MasterEquationSimulationPCD import PCDSimulation
 
+
 def tune_parser(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-ni", "--niterations", default=100000, type=int)
@@ -110,8 +111,13 @@ def scan_grid(params: dict,
               max_r=None,
               **kwargs):
     if max_r is None:
-        max_r = min(params["D"], params["E"]) if params.get("D") is not None and params["D"] != 0 else (
-            min(params["F"] / 100, params["E"]/100))
+        max_r = min(params["D"], params["E"]) \
+            if params.get("D") is not None and params["D"] != 0 \
+            else (min(params["F"] / 100, params["E"]))
+        if simulationClass is PCDSimulation:
+            influx_estimate = params["C"]*kwargs["phage_influx"]/kwargs["discretization_damage"]
+            if influx_estimate != 0:
+                max_r = min(max_r, influx_estimate)
     a_neutral = False
     conditions = initialize_conditions_dictionary(simulationClass)
     for r in np.linspace(0, max_r, r_steps):
@@ -125,6 +131,7 @@ def scan_grid(params: dict,
         if a_neutral:
             break
     return a_neutral
+
 
 def scan_until_death_or_a_neutral(params: dict,
                                   path: str,
@@ -164,43 +171,54 @@ def scan_until_death_or_a_neutral(params: dict,
                 print("reached maximum r=E, breaking, r=", r)
                 break
 
+
 def find_the_peak(params: dict, path: str, a_steps: int, simulationClass, **kwargs):
     df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
     for a in [0, 1]:
         a_1 = df.loc[df[0] == a].drop_duplicates()
         rr = np.array(list(a_1.sort_values(1)[1]))
         popsizes = np.array(list(a_1.sort_values(1)[2]))
-        # The peak is r = 0
-        if all(np.ediff1d(popsizes) < 0):
-            continue
-        if len(np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0]) == 0:
-            continue
-        mag1, mag2 = np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1], np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][0]
-        min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
-        max_r = rr[list(rr).index(min_r) + 2]
+        if all(np.ediff1d(popsizes) < 0):  # The peak is r = 0
+            min_r = rr[0]
+            max_r = rr[1]
+            mag1 = mag2 = popsizes[1] - popsizes[0]
+        else:  # The peak is r != 0
+            if len(np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0]) == 0:
+                continue
+            mag1, mag2 = (np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1],
+                          np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][0])
+            min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
+            if min_r == rr[-2]:
+                max_r = rr[-1]
+            else:
+                max_r = rr[list(rr).index(min_r) + 2]
         iteration = 0
         conditions = initialize_conditions_dictionary(simulationClass)
         while abs(mag1) > 1 or abs(mag2) > 1:
             iteration += 1
-            for r in np.linspace(min_r, max_r, 3):
-                a_neutral, conditions = check_all_asymmetries(repair=r,
-                                                              a_steps=a_steps,
-                                                              path=path,
-                                                              simulationClass=simulationClass,
-                                                              conditions=conditions,
-                                                              params=params, **kwargs)
+            for r in np.linspace(min_r, max_r, 4):
+                _, conditions = check_all_asymmetries(repair=r,
+                                                      a_steps=a_steps,
+                                                      path=path,
+                                                      simulationClass=simulationClass,
+                                                      conditions=conditions,
+                                                      params=params, **kwargs)
 
             df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
             a_1 = df.loc[df[0] == 1].drop_duplicates()
             rr = np.array(list(a_1.sort_values(1)[1]))
             popsizes = np.array(list(a_1.sort_values(1)[2]))
-            # The peak is r = 0
             if all(np.ediff1d(popsizes) < 0):
-                break
-
-            mag1, mag2 = np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1], np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][
-                0]
-            min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
-            max_r = rr[list(rr).index(min_r) + 2]
+                min_r = rr[0]
+                max_r = rr[1]
+                mag1 = mag2 = popsizes[1] - popsizes[0]
+            else:
+                mag1, mag2 = (np.ediff1d(popsizes)[np.ediff1d(popsizes) > 0][-1],
+                              np.ediff1d(popsizes)[np.ediff1d(popsizes) < 0][0])
+                min_r = rr[:-1][np.ediff1d(popsizes) > 0][-1]
+                if min_r == rr[-2]:
+                    max_r = rr[-1]
+                else:
+                    max_r = rr[list(rr).index(min_r) + 2]
             if iteration > 20:
                 break

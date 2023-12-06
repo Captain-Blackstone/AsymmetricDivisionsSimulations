@@ -209,16 +209,15 @@ if __name__ == "__main__":
     params = {"A": args.A, "B": args.B, "C": args.C, "D": args.D, "E": args.E, "F": args.F, "G": args.G}
     logging.info("Checking if phage dies out at r = 0")
     a_neutral_at_r_0, death, _, _, _ = check_all_asymmetries(repair=0,
-                                                          a_steps=args.a,
-                                                          params=params,
-                                                          path=save_path,
-                                                          starting_matrix=None,
-                                                          starting_phi=None,
-                                                          mode=args.mode,
-                                                          discretization_volume=args.discretization_volume,
-                                                          discretization_damage=args.discretization_damage,
-                                                          phage_influx=args.phage_influx
-                                                             )
+                                                             a_steps=args.a,
+                                                             params=params,
+                                                             path=save_path,
+                                                             starting_matrix=None,
+                                                             starting_phi=None,
+                                                             mode=args.mode,
+                                                             discretization_volume=args.discretization_volume,
+                                                             discretization_damage=args.discretization_damage,
+                                                             phage_influx=args.phage_influx)
     if a_neutral_at_r_0:
         max_r = args.E
     else:
