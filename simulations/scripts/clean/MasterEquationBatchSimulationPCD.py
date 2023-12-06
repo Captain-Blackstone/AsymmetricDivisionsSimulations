@@ -11,6 +11,8 @@ logging.basicConfig(level=logging.WARNING)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator PCD")
     tune_parser(parser)
+    parser.add_argument("--nondivision_threshold", type=int, default=0)
+
     args = parser.parse_args()
     if args.debug:
         for handler in logging.root.handlers[:]:
@@ -32,7 +34,9 @@ if __name__ == "__main__":
                           simulationClass=PCDSimulation,
                           mode=args.mode,
                           discretization_volume=args.discretization_volume,
-                          discretization_damage=args.discretization_damage)
+                          discretization_damage=args.discretization_damage,
+                          nondivision_threshold=args.nondivision_threshold
+                          )
     scan_until_death_or_a_neutral(params={"A": args.A, "B": args.B, "C": args.C,
                                   "D": args.D, "E": args.E, "F": args.F, "G": args.G},
                                   a_neutral=a_neutral,
@@ -41,15 +45,18 @@ if __name__ == "__main__":
                                   a_steps=args.a,
                                   simulationClass=PCDSimulation,
                                   discretization_volume=args.discretization_volume,
-                                  discretization_damage=args.discretization_damage)
+                                  discretization_damage=args.discretization_damage,
+                                  nondivision_threshold=args.nondivision_threshold
+                                  )
     find_the_peak(params={"A": args.A, "B": args.B, "C": args.C,
                           "D": args.D, "E": args.E, "F": args.F, "G": args.G},
-                          path=save_path,
-                          mode=args.mode,
-                          a_steps=args.a,
-                          simulationClass=PCDSimulation,
-                          discretization_volume=args.discretization_volume,
-                          discretization_damage=args.discretization_damage)
+                  path=save_path,
+                  mode=args.mode,
+                  a_steps=args.a,
+                  simulationClass=PCDSimulation,
+                  discretization_volume=args.discretization_volume,
+                  discretization_damage=args.discretization_damage,
+                  nondivision_threshold=args.nondivision_threshold)
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
 

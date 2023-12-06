@@ -26,8 +26,8 @@ def death(matrix: np.array, damage_death_rate: np.array, B: float, delta_t: floa
 @jit(nopython=True)
 def grow(matrix: np.array, phi: float, A: float, r: float, E: float, p: np.array, delta_t: float,
          q: np.array) -> (np.array, np.array):
-    # TESTED
     those_that_grow = A * (1 - r / E) * phi * p.reshape(len(p), 1) * delta_t * matrix
+    those_that_grow[-1, :] = 0
     where_to_grow = np.concatenate((np.zeros_like(q).reshape((1, len(q))), those_that_grow[:-1, :]))
     return those_that_grow, where_to_grow
 
