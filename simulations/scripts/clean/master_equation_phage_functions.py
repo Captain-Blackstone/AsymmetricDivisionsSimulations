@@ -5,18 +5,20 @@ from numba import jit
 @jit(nopython=True)
 def update_phage(matrix: np.array,
                  damage_death_rate: np.array,
-                 ksi: float, B: float, C: float, F: float, p: np.array, q: np.array, delta_t: float,
+                 ksi: float, B: float, C: float, F: float, p: np.array, q: np.array,
+                 ksi_0: float,
+                 delta_t: float,
                  exited_phages: float
                  ) -> float:
     # TESTED
-    diluted = B * ksi * delta_t
+    diluted = (ksi_0 - ksi) * B * delta_t
     sucked_by_cells = C * ksi * (matrix * p.reshape(len(p), 1)).sum() * delta_t
     exiting_from_cells_by_death = (damage_death_rate * matrix * q.reshape(1, len(q))).sum() * delta_t
     exiting_from_cells_by_accumulation = ((matrix * (np.zeros((len(p), len(q))) +
                                                      p.reshape(len(p), 1) * C * ksi +
                                                      q.reshape(1, len(q)) * F))[:, -1].sum() * q[-1]) * delta_t
 
-    new_ksi = (ksi - diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation +
+    new_ksi = (ksi + diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation +
                exited_phages)
     return new_ksi
 

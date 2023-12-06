@@ -21,8 +21,8 @@ def tune_parser(parser: argparse.ArgumentParser):
     parser.add_argument("-H", type=float, default=0)
     parser.add_argument("-a", type=int)  # 0 <= a <= 1
     parser.add_argument("-r", type=int)  # 0 <= r <= E
-    parser.add_argument("--discretization_volume", type=int, default=251)
-    parser.add_argument("--discretization_damage", type=int, default=251)
+    parser.add_argument("--discretization_volume", type=int, default=41)
+    parser.add_argument("--discretization_damage", type=int, default=1001)
     parser.add_argument("--save_path", type=str, default=None)
     parser.add_argument("--debug", action='store_true')
 

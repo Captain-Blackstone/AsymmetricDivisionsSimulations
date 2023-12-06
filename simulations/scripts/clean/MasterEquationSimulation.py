@@ -10,7 +10,7 @@ import traceback
 import warnings
 import logging
 from tqdm import tqdm
-# from master_interactive_mode_clean import Drawer
+from master_interactive_mode_clean import Drawer
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):

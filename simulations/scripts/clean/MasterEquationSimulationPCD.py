@@ -9,8 +9,9 @@ class PCDSimulation(PhageSimulation):
                  discretization_volume: int = 251,
                  discretization_damage: int = 251,
                  nondivision_threshold: int = 1,
+                 phage_influx: float = 0,
                  ):
-        super().__init__(params, save_path, mode, discretization_volume, discretization_damage)
+        super().__init__(params, save_path, mode, discretization_volume, discretization_damage, phage_influx)
         self.nondivision_threshold = nondivision_threshold
 
     def divide(self):
@@ -19,4 +20,6 @@ class PCDSimulation(PhageSimulation):
     def upkeep_after_step(self):
         super().upkeep_after_step()
         self.matrix[self.rhos > 1 - self.params["a"]] = 0
+
+
 

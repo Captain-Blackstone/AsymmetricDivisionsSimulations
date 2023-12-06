@@ -11,13 +11,16 @@ class PhageSimulation(Simulation):
                  save_path: str,
                  mode: str,
                  discretization_volume: int = 251,
-                 discretization_damage: int = 251):
+                 discretization_damage: int = 251,
+                 phage_influx: float = 0,
+                 ):
         super().__init__(params, save_path, mode, discretization_volume, discretization_damage)
         self.ksi = np.random.exponential(10000)
         self.history = PhageHistory(self, save_path=save_path)
         self.proposed_new_ksi = None
         self.exited_phages = 0
         self.initial_population_size = None
+        self.ksi_0 = phage_influx
 
     @staticmethod
     def alarm_ksi(scalar: float) -> None:
@@ -44,6 +47,7 @@ class PhageSimulation(Simulation):
                                              B=self.params["B"], C=self.params["C"], F=self.params["F"],
                                              p=self.p, q=self.q,
                                              exited_phages=self.exited_phages,
+                                             ksi_0=self.ksi_0,
                                              delta_t=self.delta_t)
         self.alarm_ksi(self.proposed_new_ksi)
         return accept_step

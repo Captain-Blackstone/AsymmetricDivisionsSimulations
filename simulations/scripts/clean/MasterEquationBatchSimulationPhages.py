@@ -187,9 +187,11 @@ def scan_until_death_or_a_neutral(params: dict, path: str, a_steps: int, a_neutr
                 print("reached maximum r=E, breaking, r=", r)
                 break
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator")
     tune_parser(parser)
+    parser.add_argument("--phage_influx", type=int, default=0)
     args = parser.parse_args()
     if args.debug:
         for handler in logging.root.handlers[:]:
@@ -214,32 +216,42 @@ if __name__ == "__main__":
                                                           starting_phi=None,
                                                           mode=args.mode,
                                                           discretization_volume=args.discretization_volume,
-                                                          discretization_damage=args.discretization_damage)
+                                                          discretization_damage=args.discretization_damage,
+                                                          phage_influx=args.phage_influx
+                                                             )
     if a_neutral_at_r_0:
         max_r = args.E
     else:
         max_r = guess_max_r(params=params, death=death, mode=args.mode, repair_steps=args.r,
                             discretization_volume=args.discretization_volume,
-                            discretization_damage=args.discretization_damage)
+                            discretization_damage=args.discretization_damage,
+                            phage_influx=args.phage_influx
+                            )
     a_neutral = scan_grid(params=params,
                           r_steps=args.r, a_steps=args.a,
                           path=save_path,
                           max_r=max_r,
                           mode=args.mode,
                           discretization_volume=args.discretization_volume,
-                          discretization_damage=args.discretization_damage)
+                          discretization_damage=args.discretization_damage,
+                          phage_influx=args.phage_influx
+                          )
     scan_until_death_or_a_neutral(params=params,
                                   a_neutral=a_neutral,
                                   path=save_path,
                                   mode=args.mode,
                                   a_steps=args.a,
                                   discretization_volume=args.discretization_volume,
-                                  discretization_damage=args.discretization_damage)
+                                  discretization_damage=args.discretization_damage,
+                                  phage_influx=args.phage_influx
+                                  )
     find_the_peak(params=params,
                   path=save_path,
                   mode=args.mode,
                   a_steps=args.a,
                   discretization_volume=args.discretization_volume,
-                  discretization_damage=args.discretization_damage)
+                  discretization_damage=args.discretization_damage,
+                  phage_influx=args.phage_influx
+                  )
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
