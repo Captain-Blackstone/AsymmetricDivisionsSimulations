@@ -22,9 +22,9 @@ if __name__ == "__main__":
 
     if args.mode in ["local", "interactive"]:
         save_path = f"../../data/master_equation/" \
-                    f"{args.A}_{args.B}_{args.C}_{args.D}_{args.E}_{args.F}_{args.G}"
+                    f"{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
     else:
-        save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.D}_{args.E}_{args.F}_{args.G}"
+        save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
 
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
