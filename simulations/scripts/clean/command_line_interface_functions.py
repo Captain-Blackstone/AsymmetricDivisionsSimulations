@@ -116,8 +116,9 @@ def scan_grid(params: dict,
             else (min(params["F"] / 100, params["E"]))
         if simulationClass is PCDSimulation:
             influx_estimate = params["C"]*kwargs["phage_influx"]/kwargs["discretization_damage"]
-            if influx_estimate != 0:
-                max_r = min(max_r, influx_estimate)
+            possible_upper_bounds = [influx_estimate, params["F"], params["E"]]
+            possible_upper_bounds = list(filter(lambda el: el > 0, possible_upper_bounds))
+            max_r = min(possible_upper_bounds)
     a_neutral = False
     conditions = initialize_conditions_dictionary(simulationClass)
     for r in np.linspace(0, max_r, r_steps):
