@@ -129,8 +129,6 @@ def scan_grid(params: dict,
                                                       simulationClass=simulationClass,
                                                       conditions=conditions,
                                                       **kwargs)
-        if a_neutral:
-            break
     return a_neutral
 
 
