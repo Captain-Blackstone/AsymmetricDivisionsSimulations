@@ -13,6 +13,7 @@ if __name__ == "__main__":
     tune_parser(parser)
     parser.add_argument("--nondivision_threshold", type=int, default=0)
     parser.add_argument("--phage_influx", type=float, default=0)
+    parser.add_argument("--refine", type=float, default=0)
 
     args = parser.parse_args()
     if args.debug:
@@ -28,40 +29,60 @@ if __name__ == "__main__":
 
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
-    a_neutral = scan_grid(params={"A": args.A, "B": args.B, "C": args.C,
-                                  "D": args.D, "E": args.E, "F": args.F, "G": args.G},
-                          r_steps=args.r, a_steps=args.a,
-                          path=save_path,
-                          simulationClass=PCDSimulation,
-                          mode=args.mode,
-                          discretization_volume=args.discretization_volume,
-                          discretization_damage=args.discretization_damage,
-                          nondivision_threshold=args.nondivision_threshold,
-                          phage_influx=args.phage_influx
-                          )
-    scan_until_death_or_a_neutral(params={"A": args.A, "B": args.B, "C": args.C,
-                                  "D": args.D, "E": args.E, "F": args.F, "G": args.G},
-                                  a_neutral=a_neutral,
-                                  path=save_path,
-                                  mode=args.mode,
-                                  a_steps=args.a,
-                                  simulationClass=PCDSimulation,
-                                  discretization_volume=args.discretization_volume,
-                                  discretization_damage=args.discretization_damage,
-                                  nondivision_threshold=args.nondivision_threshold,
-                                  phage_influx=args.phage_influx
-                                  )
-    find_the_peak(params={"A": args.A, "B": args.B, "C": args.C,
-                          "D": args.D, "E": args.E, "F": args.F, "G": args.G},
-                  path=save_path,
-                  mode=args.mode,
-                  a_steps=args.a,
-                  simulationClass=PCDSimulation,
-                  discretization_volume=args.discretization_volume,
-                  discretization_damage=args.discretization_damage,
-                  nondivision_threshold=args.nondivision_threshold,
-                  phage_influx=args.phage_influx
-                  )
+    if args.refine != 0:
+        max_r = None
+        if Path(f"{save_path}/population_size_estimate.txt").exists():
+            estimates = pd.read_csv(f"{save_path}/population_size_estimate.txt", sep=",", header=None)
+            max_r = estimates.loc[estimates[2] == estimates[2].max()][1].values[0]
+        a_neutral = scan_grid(params={"A": args.A, "B": args.B, "C": args.C,
+                                      "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                              r_steps=args.r, a_steps=args.a,
+                              path=save_path,
+                              simulationClass=PCDSimulation,
+                              mode=args.mode,
+                              discretization_volume=args.discretization_volume,
+                              discretization_damage=args.discretization_damage,
+                              nondivision_threshold=args.nondivision_threshold,
+                              phage_influx=args.phage_influx,
+                              a_min=args.refine,
+                              a_max=1,
+                              max_r=max_r)
+
+    else:
+        a_neutral = scan_grid(params={"A": args.A, "B": args.B, "C": args.C,
+                                      "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                              r_steps=args.r, a_steps=args.a,
+                              path=save_path,
+                              simulationClass=PCDSimulation,
+                              mode=args.mode,
+                              discretization_volume=args.discretization_volume,
+                              discretization_damage=args.discretization_damage,
+                              nondivision_threshold=args.nondivision_threshold,
+                              phage_influx=args.phage_influx
+                              )
+        scan_until_death_or_a_neutral(params={"A": args.A, "B": args.B, "C": args.C,
+                                      "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                                      a_neutral=a_neutral,
+                                      path=save_path,
+                                      mode=args.mode,
+                                      a_steps=args.a,
+                                      simulationClass=PCDSimulation,
+                                      discretization_volume=args.discretization_volume,
+                                      discretization_damage=args.discretization_damage,
+                                      nondivision_threshold=args.nondivision_threshold,
+                                      phage_influx=args.phage_influx
+                                      )
+        find_the_peak(params={"A": args.A, "B": args.B, "C": args.C,
+                              "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                      path=save_path,
+                      mode=args.mode,
+                      a_steps=args.a,
+                      simulationClass=PCDSimulation,
+                      discretization_volume=args.discretization_volume,
+                      discretization_damage=args.discretization_damage,
+                      nondivision_threshold=args.nondivision_threshold,
+                      phage_influx=args.phage_influx
+                      )
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
 

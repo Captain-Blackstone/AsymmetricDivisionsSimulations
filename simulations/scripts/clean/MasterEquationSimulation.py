@@ -324,7 +324,7 @@ class History:
                 self.times = [self.times[0], self.times[-1]]
                 self.population_sizes = [self.population_sizes[0], self.population_sizes[-1]]
             else:
-                self.population_sizes = [get_peaks(self.population_sizes)] + [self.population_sizes[-1]]
+                self.population_sizes = list(get_peaks(self.population_sizes)) + [self.population_sizes[-1]]
         #     fl.write(",".join(list(map(str, self.times))) + '\n')
             fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
         # with open(f"{self.save_path}/final_state_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:

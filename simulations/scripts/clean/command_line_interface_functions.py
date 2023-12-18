@@ -58,12 +58,14 @@ def check_all_asymmetries(repair: float,
                           path: str,
                           simulationClass,
                           conditions: dict,
+                          a_min=0,
+                          a_max=1,
                           **kwargs) -> (bool, np.array, float):
+
     parameters = params.copy()
     estimates_file = f"{path}/population_size_estimate.txt"
     equilibria = []
-    for a in np.linspace(0, 1, a_steps):
-
+    for a in np.linspace(a_min, a_max, a_steps):
         # Do not rerun already existing estimations
         current_estimate = get_estimate(file=estimates_file, a_val=a, r_val=repair)
         if current_estimate is not None:
@@ -109,6 +111,8 @@ def scan_grid(params: dict,
               path: str,
               simulationClass,
               max_r=None,
+              a_min=0,
+              a_max=1,
               **kwargs):
     if max_r is None:
         max_r = min(params["D"], params["E"]) \
@@ -128,6 +132,8 @@ def scan_grid(params: dict,
                                                       path=path,
                                                       simulationClass=simulationClass,
                                                       conditions=conditions,
+                                                      a_min=a_min,
+                                                      a_max=a_max,
                                                       **kwargs)
     return a_neutral
 
