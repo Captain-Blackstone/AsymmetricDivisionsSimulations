@@ -138,6 +138,64 @@ def scan_grid(params: dict,
     return a_neutral
 
 
+def scan_grid_log(params: dict,
+                  r_steps: int,
+                  a_steps: int,
+                  path: str,
+                  simulationClass,
+                  aa=None,
+                  rr=None,
+                  **kwargs):
+    parameters = params.copy()
+    estimates_file = f"{path}/population_size_estimate.txt"
+    if aa is None:
+        aa = 1 - np.logspace(0, 2, a_steps) / 100
+    if rr is None:
+        rr = [0] + list(np.logspace(0, 2, r_steps-1) / 100 * params["E"])
+        rr = list(np.logspace(0, 2, r_steps) / 100 * params["E"])
+    for r in rr:
+        conditions = initialize_conditions_dictionary(simulationClass)
+        for a in aa:
+            # Do not rerun already existing estimations
+            current_estimate = get_estimate(file=estimates_file, a_val=a, r_val=r)
+            if current_estimate is not None:
+                continue
+
+            parameters["a"] = round(a, 10)
+            parameters["r"] = round(r, 10)
+
+            if (any([el is None for el in conditions.values()]) or
+                    (conditions["matrix"] is not None and conditions["matrix"].sum() < 1)):
+                simulation = simulationClass(params=parameters, save_path=path, **kwargs)
+                simulation.run(1000000000000000000, save=False)
+                for key in conditions.keys():
+                    conditions[key] = getattr(simulation, key)
+
+            if all([el is not None for el in conditions.values()]) and conditions["matrix"].sum() > 0:
+                # Don't start from dead population
+                if conditions["matrix"].sum() < 1:
+                    conditions["matrix"] = conditions["matrix"] / conditions["matrix"].sum()
+                # If no phage in chemostat, add some phage
+                if conditions.get("ksi") is not None and conditions["ksi"] < 1:
+                    conditions["ksi"] = 10000
+
+
+            logging.info(f"starting simulation with params: {parameters}")
+            # Create simulation
+            simulation = simulationClass(params=parameters, save_path=path, **kwargs)
+
+            # Initialize with conditions
+            for key, val in conditions.items():
+                setattr(simulation, key, val)
+
+            # Run simulation
+            simulation.run(1000000000000000000)
+
+            # Save the final conditions
+            for key in conditions.keys():
+                conditions[key] = getattr(simulation, key)
+
+
 def scan_until_death_or_a_neutral(params: dict,
                                   path: str,
                                   a_steps: int,
@@ -175,6 +233,55 @@ def scan_until_death_or_a_neutral(params: dict,
             if r == params["E"]:
                 print("reached maximum r=E, breaking, r=", r)
                 break
+
+
+def find_the_peak_pcd(params: dict, path: str, a_steps: int, simulationClass, **kwargs):
+    for _ in range(20):
+        df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+        df.columns = ["a", "r", "population_size", "converged", "type", "ksi", "estimated_equilibrium_damage"]
+        df = df.loc[df.type != "undefined"]
+        current_peak = df.loc[df.population_size == df.population_size.max()]
+        if current_peak.population_size.values[0] < 1:
+            return
+        r_peak = current_peak.r.values[0]
+        a_peak = current_peak.a.values[0]
+        a_vals, r_vals = [], []
+        for trait_peak, trait, not_trait, trait_list in zip([a_peak, r_peak],
+                                                 ["a", "r"], ["r", "a"],
+                                                 [a_vals, r_vals]):
+            # sorted_unique = sorted(list(df.loc[df.not_trait == current_peak[not_trait].values[0]][trait].unique()))
+            sorted_unique = sorted(list(df[trait].unique()))
+            index = sorted_unique.index(trait_peak)
+            neighbour_indices = [index - 1, index + 1] #list(filter(lambda el: 0 <= el <= len(sorted_unique) - 1, [index - 1, index + 1]))
+            left = sorted_unique[neighbour_indices[0]] if neighbour_indices[0] >= 0 else 0
+            if neighbour_indices[1] <= len(sorted_unique) - 1:
+                right = sorted_unique[neighbour_indices[1]]
+            elif trait == "r":
+                right = params["E"]
+            elif trait == "a":
+                right = 1
+            try:
+                left_delta = current_peak.population_size.values[0] - df.loc[df[trait] == left].population_size.values[0]
+            except IndexError:
+                left_delta = 1000
+            try:
+                right_delta = current_peak.population_size.values[0] - df.loc[df[trait] == right].population_size.values[0]
+            except IndexError:
+                right_delta = 1000
+            if left_delta < 10 and right_delta < 10:
+                trait_list.extend([trait_peak])
+            else:
+                trait_list.extend(list(np.linspace(left, right, 4).round(10)))
+        if len(set(a_vals)) == 1 and len(set(r_vals)) == 1:
+            return
+        scan_grid_log(params=params,
+                      r_steps=2,
+                      a_steps=2,
+                      path=path,
+                      simulationClass=simulationClass,
+                      aa=a_vals,
+                      rr=r_vals,
+                      **kwargs)
 
 
 def find_the_peak(params: dict, path: str, a_steps: int, simulationClass, **kwargs):
