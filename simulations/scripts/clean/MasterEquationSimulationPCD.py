@@ -22,4 +22,38 @@ class PCDSimulation(PhageSimulation):
         self.matrix[self.rhos > 1 - self.params["a"]] = 0
 
 
+if __name__ == "__main__":
+    import atexit
+    import logging
+    import argparse
+    from command_line_interface_functions import tune_parser, write_completion
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(prog="MasterEquation simulator PCD")
+    tune_parser(parser, ar_type=float)
+    parser.add_argument("--nondivision_threshold", type=int, default=0)
+    parser.add_argument("--phage_influx", type=float, default=0)
+    parser.add_argument("--refine", type=float, default=0)
+    args = parser.parse_args()
+    if args.debug:
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+        logging.basicConfig(level=logging.INFO)
+
+    if args.mode in ["local", "interactive"]:
+        save_path = f"../../data/master_equation/" \
+                    f"{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
+    else:
+        save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
+    Path(save_path).mkdir(exist_ok=True)
+    atexit.register(lambda: write_completion(save_path))
+    simulation = PCDSimulation(mode=args.mode,
+                               params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
+                                       "E": args.E, "F": args.F, "G": args.G, "a": args.a, "r": args.r},
+                               save_path=save_path,
+                               discretization_volume=args.discretization_volume,
+                               discretization_damage=args.discretization_damage,
+                               nondivision_threshold=args.nondivision_threshold,
+                               phage_influx=args.phage_influx)
+    simulation.run(10000000000, save=False)
 

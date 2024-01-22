@@ -8,7 +8,7 @@ from MasterEquationPhageSimulation import PhageSimulation
 from MasterEquationSimulationPCD import PCDSimulation
 
 
-def tune_parser(parser: argparse.ArgumentParser):
+def tune_parser(parser: argparse.ArgumentParser, ar_type=int):
     parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
     parser.add_argument("-ni", "--niterations", default=100000, type=int)
     parser.add_argument("--run_name", type=str, default="")
@@ -18,10 +18,10 @@ def tune_parser(parser: argparse.ArgumentParser):
     parser.add_argument("-D", type=float)  # d / K ?
     parser.add_argument("-E", type=float)  # 0 < E <= 1
     parser.add_argument("-F", type=float)  # 0 <= F
-    parser.add_argument("-G", type=float)  # G
+    parser.add_argument("-G", type=float, default=1.0)  # G
     parser.add_argument("-H", type=float, default=0)
-    parser.add_argument("-a", type=int)  # 0 <= a <= 1
-    parser.add_argument("-r", type=int)  # 0 <= r <= E
+    parser.add_argument("-a", type=ar_type)  # 0 <= a <= 1
+    parser.add_argument("-r", type=ar_type)  # 0 <= r <= E
     parser.add_argument("--discretization_volume", type=int, default=41)
     parser.add_argument("--discretization_damage", type=int, default=1001)
     parser.add_argument("--save_path", type=str, default=None)

@@ -17,7 +17,6 @@ def update_phage(matrix: np.array,
     exiting_from_cells_by_accumulation = ((matrix * (np.zeros((len(p), len(q))) +
                                                      p.reshape(len(p), 1) * C * ksi +
                                                      q.reshape(1, len(q)) * F))[:, -1].sum() * q[-1]) * delta_t
-
     new_ksi = (ksi + diluted - sucked_by_cells + exiting_from_cells_by_death + exiting_from_cells_by_accumulation +
                exited_phages)
     return new_ksi
