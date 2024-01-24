@@ -10,7 +10,7 @@ import traceback
 import warnings
 import logging
 from tqdm import tqdm
-# from master_interactive_mode_clean import Drawer
+from master_interactive_mode_clean import Drawer
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -33,10 +33,8 @@ class Simulation:
                  discretization_volume: int = 251,
                  discretization_damage: int = 251):
         self.mode = mode
-        if self.mode == "interactive":
-            self.drawer = Drawer(self)
-
         self.params = params.copy()
+
         # TODO
         self.params["F"] /= 500
         self.p = np.linspace(1, 2, discretization_volume)
@@ -75,6 +73,13 @@ class Simulation:
         self.prev_popsize = (self.matrix * self.rhos / self.matrix.sum()).sum()
         self.proposed_new_matrix = None
         self.proposed_new_phi = None
+        self.drawer = None
+        self.pause = False
+
+    def run_interactive(self):
+        if self.mode == "interactive":
+            self.drawer = Drawer(self)
+            self.drawer.run()
 
     @staticmethod
     def alarm_matrix(matrix: np.array) -> None:
@@ -230,7 +235,7 @@ class Simulation:
     def prepare_to_run(self):
         pass
 
-    def run(self, n_steps: int, save=True):
+    def run(self, n_steps: int, save=True, infinite=False):
         self.prepare_to_run()
         self.last_record_n = self.matrix.sum()
         starting_time = tm.time()
@@ -243,7 +248,7 @@ class Simulation:
             last_recorded = 0
             for step_number in iterator:
                 accept_step = False
-                while not accept_step:
+                while not (accept_step and not self.pause):
                     try:
                         accept_step = self.step(step_number)
                         if tm.time() > starting_time + max_time:
@@ -261,7 +266,7 @@ class Simulation:
                     self.history.record()
                     self.check_convergence_v2()
                     logging.info(self.get_logging_text)
-                if self.converged:
+                if self.converged and infinite==False:
                     break
                 if self.mode == "interactive":
                     self.drawer.draw_step(step_number, self.delta_t)

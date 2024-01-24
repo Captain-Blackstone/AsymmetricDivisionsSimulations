@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import atexit
 from scipy.signal import argrelmin, argrelmax
+import tkinter as tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import threading
+import copy
 
 class Drawer:
     """
@@ -10,14 +14,14 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation = simulation_thread
-        self.update_time = 5000  # number of steps between figure updates
+        self.update_time = 500  # number of steps between figure updates
         self.resolution = 150  # number of steps between data collection events
         self.plot_how_many = 1000  # number of points present on the plot at each time point
         self.timeline = []
-        plt.ion()
-        self.fig, self.ax = plt.subplots(3, 2)
-        self.fig.canvas.manager.full_screen_toggle()
-        plt.show(block=False)
+        # plt.ion()
+        self.fig, self.ax = plt.subplots(3, 2, figsize=(15, 10))
+        # self.fig.canvas.manager.full_screen_toggle()
+        # plt.show(block=False)
         atexit.register(plt.close)
         line_data_dicts = [
             {"ax_num": [0, 0], "color": "blue", "alpha": 1, "label": "Population size",
@@ -69,6 +73,10 @@ class Drawer:
                                 data_dict.get("label")) for data_dict in matrix_data_dicts]
         # self.reg1, = self.ax[0][0].plot([0, 0], [0, 0], color="red")
         # self.reg2, = self.ax[0][0].plot([0, 0], [0, 0], color="red")
+        self.window = Window(self)
+
+    def run(self):
+        self.window.run()
 
     def damage_update_func(self):
         rhos, counts = self.simulation.rhos.flatten(), self.simulation.matrix.flatten()
@@ -77,7 +85,21 @@ class Drawer:
         res = [counts[rhos == rho].sum() for rho in rhos_unique]
         return dict(x=rhos_unique, y=res)
 
+
     def draw_step(self, step_number: int, time_step_duration: float) -> None:
+        # Collect data each self.resolution steps
+        if step_number % self.resolution == 0:
+            for plot in self.plots:
+                plot.collect_data(time_step_duration)
+        # Update figure each self.update_time steps
+        if step_number % self.update_time == 0:
+            for plot in self.plots:
+                plot.update_data()
+            for plot in self.plots:
+                plot.update_plot()
+            self.window.update()
+
+    def draw_step_prev(self, step_number: int, time_step_duration: float) -> None:
         """
         Update all the Plots of the Drawer.
         Update the data only each resolution time_step,
@@ -154,13 +176,17 @@ class Plot:
     def collect_data(self, time_step_duration: float) -> None:
         pass
 
+    # def update_data(self):
+    #     """
+    #     put the current xdata and ydata on the plot
+    #     :return:
+    #     """
+    #     self.layer.set_ydata(self.ydata)
+    #     self.layer.set_xdata(self.xdata)
+
     def update_data(self):
-        """
-        put the current xdata and ydata on the plot
-        :return:
-        """
-        self.layer.set_ydata(self.ydata)
-        self.layer.set_xdata(self.xdata)
+        self.ax.clear()
+        self.ax.plot(self.xdata, self.ydata, color=self.color, alpha=self.alpha, marker="*", linestyle="--")
 
     def update_plot(self):
         """
@@ -286,3 +312,68 @@ class MatrixPlot:
 
     def update_plot(self):
         pass
+
+
+class Window():
+    def __init__(self, drawer: Drawer, width=1920, height=1080):
+        self.drawer = drawer
+        self.initial_simulation = copy.deepcopy(self.drawer.simulation)
+        self.window = tk.Tk()
+        plot_frac_width = 0.9
+        self.window.title('PCD simulation')
+        self.window.geometry(f"{width}x{height}")
+        self.f_left = tk.Frame(master=self.window, borderwidth=10, height=height, width=width * plot_frac_width)
+        self.f_left.grid(row=0, column=0)
+
+        f_right = tk.Frame(master=self.window, borderwidth=10, height=height, width=width * (1 - plot_frac_width))
+        f_right.grid(row=0, column=1)
+        self.canvas = FigureCanvasTkAgg(self.drawer.fig, master=self.f_left)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack()
+        self.run_button = tk.Button(master=f_right,
+                                     command=self.run_pressed,
+                                     height=2,
+                                     width=10,
+                                     text="Run")
+        self.run_button.grid(row=0, column=0, sticky="n")
+        self.pause_button = tk.Button(master=f_right,
+                                      command=self.pause_pressed,
+                                      height=2,
+                                      width=10,
+                                      text="Pause/Resume")
+        self.pause_button.grid(row=0, column=1, sticky="n")
+
+        params = self.drawer.simulation.params.keys()
+        self.param_entries = dict()
+        for i, param in enumerate(params):
+            label = tk.Label(master=f_right, text=f"{param}: ")
+            label.grid(row=i + 1, column=0)
+            e = tk.Entry(master=f_right)
+            e.insert(tk.END, self.drawer.simulation.params[param])
+            e.grid(row=i + 1, column=1)
+            b = tk.Button(master=f_right, command=lambda p=param: self.update_simulation(p),
+                          height=1, width=2, text="Apply")
+            b.grid(row=i + 1, column=2)
+            self.param_entries[param] = e
+    def run(self):
+        self.window.mainloop()
+
+    def update(self):
+        self.canvas.draw()
+
+    def update_simulation(self, param):
+        try:
+            val = float(self.param_entries[param].get().strip())
+        except ValueError:
+            print("Invalid value")
+        self.drawer.simulation.params[param] = val
+        print(f"Updating {param} = {val}")
+
+    def run_pressed(self):
+        thread = threading.Thread(target=lambda: self.drawer.simulation.run(1000000000, infinite=True))
+        thread.start()
+
+    def pause_pressed(self):
+        # If the STOP button is pressed then terminate the loop
+        self.drawer.simulation.pause = not self.drawer.simulation.pause
+

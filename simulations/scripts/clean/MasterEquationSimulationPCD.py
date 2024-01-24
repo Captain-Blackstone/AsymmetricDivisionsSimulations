@@ -1,3 +1,5 @@
+import time
+
 from MasterEquationPhageSimulation import PhageSimulation
 from master_equation_pcd_functions import divide
 
@@ -20,6 +22,7 @@ class PCDSimulation(PhageSimulation):
     def upkeep_after_step(self):
         super().upkeep_after_step()
         self.matrix[self.rhos > 1 - self.params["a"]] = 0
+        time.sleep(0.0001)
 
 
 if __name__ == "__main__":
@@ -55,5 +58,9 @@ if __name__ == "__main__":
                                discretization_damage=args.discretization_damage,
                                nondivision_threshold=args.nondivision_threshold,
                                phage_influx=args.phage_influx)
-    simulation.run(10000000000, save=False)
+    if args.mode == "interactive":
+        simulation.run_interactive()
+    else:
+        simulation.run(10000000000, save=False)
+
 
