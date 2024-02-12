@@ -1,7 +1,7 @@
 import time
 
 from MasterEquationPhageSimulation import PhageSimulation
-from master_equation_pcd_functions import divide
+from master_equation_pcd_functions import divide, accumulate_phage
 
 
 class PCDSimulation(PhageSimulation):
@@ -18,6 +18,13 @@ class PCDSimulation(PhageSimulation):
 
     def divide(self):
         return divide(matrix=self.proposed_new_matrix, q=self.q, nondivision_threshold=self.nondivision_threshold)
+
+    def accumulate_damage(self):
+        return accumulate_phage(matrix=self.matrix,
+                                C=self.params["C"], F=self.params["F"],
+                                ksi=self.ksi,
+                                delta_t=self.delta_t,
+                                p=self.p, q=self.q)
 
     def upkeep_after_step(self):
         super().upkeep_after_step()

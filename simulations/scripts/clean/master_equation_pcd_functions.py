@@ -19,3 +19,17 @@ def divide(matrix: np.array, q: np.array, nondivision_threshold: int) -> np.arra
     matrix[-1, :] -= those_that_divide
     return matrix
 
+
+def accumulate_phage(matrix: np.array,
+                     C: float,
+                     F: float,
+                     ksi: float, delta_t: float,
+                     p: np.array, q: np.array, D=0.0) -> (np.array, np.array):
+    # TESTED
+    those_that_accumulate = (np.zeros((len(p), len(q))) +
+                             p.reshape(len(p), 1) * (D * len(q)) + q.reshape(1, len(q)) * F) * delta_t * matrix
+    those_that_accumulate[:, 0] += (p * ksi * C * delta_t * matrix[:, 0])
+    where_to_accumulate = np.concatenate((np.zeros_like(p).reshape((len(p), 1)),
+                                          those_that_accumulate[:, :-1]), axis=1)
+    return those_that_accumulate, where_to_accumulate
+
