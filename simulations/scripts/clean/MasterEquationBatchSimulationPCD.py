@@ -13,6 +13,8 @@ if __name__ == "__main__":
     parser.add_argument("--nondivision_threshold", type=int, default=0)
     parser.add_argument("--phage_influx", type=float, default=0)
     parser.add_argument("--refine", type=float, default=0)
+    parser.add_argument("-dft", "--death_function_threshold", type=float, default=1)
+    parser.add_argument("-dfc", "--death_function_curvature", type=float, default=1)
     args = parser.parse_args()
     if args.debug:
         for handler in logging.root.handlers[:]:
@@ -40,6 +42,8 @@ if __name__ == "__main__":
                               discretization_volume=args.discretization_volume,
                               discretization_damage=args.discretization_damage,
                               nondivision_threshold=args.nondivision_threshold,
+                              death_function_threshold=args.death_function_threshold,
+                              death_function_curvature=args.death_function_curvature,
                               phage_influx=args.phage_influx,
                               a_min=args.refine,
                               a_max=1,
@@ -56,7 +60,10 @@ if __name__ == "__main__":
                       discretization_volume=args.discretization_volume,
                       discretization_damage=args.discretization_damage,
                       nondivision_threshold=args.nondivision_threshold,
-                      phage_influx=args.phage_influx)
+                      death_function_threshold=args.death_function_threshold,
+                      death_function_curvature=args.death_function_curvature,
+                      phage_influx=args.phage_influx,
+                      )
 
         find_the_peak_pcd(params={"A": args.A, "B": args.B, "C": args.C,
                                   "D": args.D, "E": args.E, "F": args.F, "G": args.G},
@@ -67,6 +74,8 @@ if __name__ == "__main__":
                           discretization_volume=args.discretization_volume,
                           discretization_damage=args.discretization_damage,
                           nondivision_threshold=args.nondivision_threshold,
+                          death_function_threshold=args.death_function_threshold,
+                          death_function_curvature=args.death_function_curvature,
                           phage_influx=args.phage_influx
                           )
     with open(f"{save_path}/scanning.txt", "a") as fl:

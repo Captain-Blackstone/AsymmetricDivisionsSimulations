@@ -10,10 +10,14 @@ class PCDSimulation(PhageSimulation):
                  mode: str,
                  discretization_volume: int = 251,
                  discretization_damage: int = 251,
+                 death_function_threshold: int = 1,
+                 death_function_curvature: int = 1,
                  nondivision_threshold: int = 1,
                  phage_influx: float = 0,
                  ):
-        super().__init__(params, save_path, mode, discretization_volume, discretization_damage, phage_influx)
+        super().__init__(params, save_path, mode, discretization_volume, discretization_damage,
+                         death_function_threshold, death_function_curvature,
+                         phage_influx)
         self.nondivision_threshold = nondivision_threshold
 
     def divide(self):

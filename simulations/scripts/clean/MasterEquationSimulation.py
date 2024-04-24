@@ -31,7 +31,10 @@ class Simulation:
                  save_path: str,
                  mode: str,
                  discretization_volume: int = 251,
-                 discretization_damage: int = 251):
+                 discretization_damage: int = 251,
+                 death_function_threshold: int = 1,
+                 death_function_curvature: int = 1,
+                 ):
         self.mode = mode
         self.params = params.copy()
 
@@ -42,7 +45,7 @@ class Simulation:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
-            self.damage_death_rate = (self.rhos / (1 - self.rhos)) ** self.params["G"]
+            self.damage_death_rate = (death_function_curvature * self.rhos / (death_function_threshold - self.rhos)) ** self.params["G"]
             self.damage_death_rate[self.rhos >= 1] = 0
             self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
                 ~np.isinf(self.damage_death_rate)].max()
