@@ -40,7 +40,9 @@ class PhageSimulation(Simulation):
 
     def clear_nonexistent(self):
         self.proposed_new_matrix, self.exited_phages = clear_nonexistent(matrix=self.proposed_new_matrix,
-                                                                         rhos=self.rhos)
+                                                                         rhos=self.rhos,
+                                                                         death_function_threshold=self.death_function_threshold
+                                                                         )
 
     def step(self, step_number: int):
         accept_step = super().step(step_number)

@@ -33,7 +33,6 @@ class PCDSimulation(PhageSimulation):
     def upkeep_after_step(self):
         super().upkeep_after_step()
         self.matrix[self.rhos > 1 - self.params["a"]] = 0
-        time.sleep(0.0001)
 
 
 if __name__ == "__main__":
@@ -48,6 +47,9 @@ if __name__ == "__main__":
     parser.add_argument("--nondivision_threshold", type=int, default=0)
     parser.add_argument("--phage_influx", type=float, default=0)
     parser.add_argument("--refine", type=float, default=0)
+    parser.add_argument("-dft", "--death_function_threshold", type=float, default=1)
+    parser.add_argument("-dfc", "--death_function_curvature", type=float, default=1)
+
     args = parser.parse_args()
     if args.debug:
         for handler in logging.root.handlers[:]:
@@ -56,9 +58,9 @@ if __name__ == "__main__":
 
     if args.mode in ["local", "interactive"]:
         save_path = f"../../data/master_equation/" \
-                    f"{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
+                    f"{args.A}_{args.B}_{args.C}_{args.D}_{args.phage_influx}_{args.E}_{args.F}_{args.death_function_threshold}_{args.death_function_curvature}"
     else:
-        save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.phage_influx}_{args.E}_{args.F}"
+        save_path = f"./data/{args.A}_{args.B}_{args.C}_{args.D}_{args.phage_influx}_{args.E}_{args.F}_{args.death_function_threshold}_{args.death_function_curvature}"
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
     simulation = PCDSimulation(mode=args.mode,
@@ -68,7 +70,10 @@ if __name__ == "__main__":
                                discretization_volume=args.discretization_volume,
                                discretization_damage=args.discretization_damage,
                                nondivision_threshold=args.nondivision_threshold,
-                               phage_influx=args.phage_influx)
+                               phage_influx=args.phage_influx,
+                               death_function_threshold=args.death_function_threshold,
+                               death_function_curvature=args.death_function_curvature,
+                               )
     if args.mode == "interactive":
         simulation.run_interactive()
     else:

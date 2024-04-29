@@ -10,7 +10,7 @@ import traceback
 import warnings
 import logging
 from tqdm import tqdm
-from master_interactive_mode_clean import Drawer
+# from master_interactive_mode_clean import Drawer
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -48,7 +48,7 @@ class Simulation:
             warnings.simplefilter("ignore")
             self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
             self.damage_death_rate = (self.death_function_curvature * self.rhos / (self.death_function_threshold - self.rhos)) ** self.params["G"]
-            self.damage_death_rate[self.rhos >= 1] = 0
+            self.damage_death_rate[self.rhos >= self.death_function_threshold] = np.inf
             self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
                 ~np.isinf(self.damage_death_rate)].max()
 

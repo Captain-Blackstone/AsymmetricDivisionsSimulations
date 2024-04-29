@@ -36,10 +36,10 @@ def accumulate_phage(matrix: np.array,
     return those_that_accumulate, where_to_accumulate
 
 
-def clear_nonexistent(matrix: np.array, rhos: np.array):
+def clear_nonexistent(matrix: np.array, rhos: np.array, death_function_threshold: float):
     q = np.arange(matrix.shape[1])
     exited_mtx = matrix.copy()
-    exited_mtx[rhos < 0.97] = 0
+    exited_mtx[rhos < 0.97*death_function_threshold] = 0
     exited_phages = (exited_mtx * q.reshape((1, len(q)))).sum()
-    matrix[rhos >= 0.97] = 0
+    matrix[rhos >= 0.97*death_function_threshold] = 0
     return matrix, exited_phages
