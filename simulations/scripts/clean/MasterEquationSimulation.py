@@ -37,6 +37,8 @@ class Simulation:
                  ):
         self.mode = mode
         self.params = params.copy()
+        self.death_function_threshold = death_function_threshold
+        self.death_function_curvature = death_function_curvature
 
         # TODO
         self.params["F"] /= 500
@@ -45,7 +47,7 @@ class Simulation:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
-            self.damage_death_rate = (death_function_curvature * self.rhos / (death_function_threshold - self.rhos)) ** self.params["G"]
+            self.damage_death_rate = (self.death_function_curvature * self.rhos / (self.death_function_threshold - self.rhos)) ** self.params["G"]
             self.damage_death_rate[self.rhos >= 1] = 0
             self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
                 ~np.isinf(self.damage_death_rate)].max()
@@ -126,23 +128,27 @@ class Simulation:
                 self.convergence_estimate = self.matrix.sum()
                 logging.info(f"same population size for {critical_period} time")
             else:
+                path = []
                 minima, maxima, t_minima, t_maxima = self.history.get_peaks()
                 minima, maxima, t_minima, t_maxima = minima[-min(len(minima), len(maxima)):], \
                     maxima[-min(len(minima), len(maxima)):], \
                     t_minima[-min(len(minima), len(maxima)):], \
                     t_maxima[-min(len(minima), len(maxima)):]
                 if len(minima) >= 2 and len(maxima) >= 2:  # If there were more than two minima and maxima
+                    path.append(1)
                     estimate = (minima[-1] + maxima[-1]) / 2  # Estimate based on last two 1st order peaks
                     if self.convergence_estimate_first_order is not None and \
                             self.time > self.convergence_estimate_first_order[2] + critical_period / 4 and \
                             len(minima) + len(maxima) != self.convergence_estimate_first_order[1] and \
                             int(self.convergence_estimate_first_order[0]) == int(estimate):
+                        path.append(2)
                         if abs(maxima[-1] - minima[-1]) < 10:
                             self.converged = True
                             self.convergence_estimate = self.convergence_estimate_first_order[0]
                             logging.info(
                                 f"converged, same 1st order convergence estimate {estimate} as before: "
                                 f"{self.convergence_estimate_first_order}")
+                            path.append(3)
                     # Else if there was no 1st order convergence estimate or
                     # there is one and some additional peaks arrived, update the 1st order convergence estimate
                     elif self.convergence_estimate_first_order is None or \
@@ -150,9 +156,18 @@ class Simulation:
                             self.time > self.convergence_estimate_first_order[2] + critical_period / 4 and \
                             len(minima) + len(maxima) != self.convergence_estimate_first_order[1]:
                         self.convergence_estimate_first_order = [estimate, len(minima) + len(maxima), self.time]
+                        path.append(-1)
                         # logging.info(
                         #     f"changing 1st order convergence estimate: {self.convergence_estimate_first_order}")
-                smoothed, t_smoothed = (minima + maxima) / 2, (t_minima + t_maxima) / 2
+                try:
+                    smoothed, t_smoothed = (minima + maxima) / 2, (t_minima + t_maxima) / 2
+                except ValueError as e:
+                    print(minima)
+                    print(maxima)
+                    print(t_minima)
+                    print(t_maxima)
+                    print(self.params, self.death_function_threshold, self.death_function_curvature)
+                    raise e
                 if len(smoothed) > 5:
                     index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
                     if len(index_array) == 0:
