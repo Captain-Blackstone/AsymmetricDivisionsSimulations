@@ -12,12 +12,9 @@ class PhageSimulation(Simulation):
                  mode: str,
                  discretization_volume: int = 251,
                  discretization_damage: int = 251,
-                 death_function_threshold: int = 1,
-                 death_function_curvature: int = 1,
                  phage_influx: float = 0,
                  ):
-        super().__init__(params, save_path, mode, discretization_volume, discretization_damage,
-                         death_function_threshold, death_function_curvature)
+        super().__init__(params, save_path, mode, discretization_volume, discretization_damage)
         self.ksi = np.random.exponential(10000)
         self.history = PhageHistory(self, save_path=save_path)
         self.proposed_new_ksi = None

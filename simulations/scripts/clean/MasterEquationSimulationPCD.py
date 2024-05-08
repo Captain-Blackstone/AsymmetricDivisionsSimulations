@@ -10,14 +10,10 @@ class PCDSimulation(PhageSimulation):
                  mode: str,
                  discretization_volume: int = 251,
                  discretization_damage: int = 251,
-                 death_function_threshold: int = 1,
-                 death_function_curvature: int = 1,
                  nondivision_threshold: int = 1,
                  phage_influx: float = 0,
                  ):
-        super().__init__(params, save_path, mode, discretization_volume, discretization_damage,
-                         death_function_threshold, death_function_curvature,
-                         phage_influx)
+        super().__init__(params, save_path, mode, discretization_volume, discretization_damage, phage_influx)
         self.nondivision_threshold = nondivision_threshold
 
     def divide(self):
@@ -73,10 +69,7 @@ if __name__ == "__main__":
                                discretization_volume=args.discretization_volume,
                                discretization_damage=args.discretization_damage,
                                nondivision_threshold=args.nondivision_threshold,
-                               phage_influx=args.phage_influx,
-                               death_function_threshold=args.death_function_threshold,
-                               death_function_curvature=args.death_function_curvature,
-                               )
+                               phage_influx=args.phage_influx)
     if args.mode == "interactive":
         simulation.run_interactive()
     else:

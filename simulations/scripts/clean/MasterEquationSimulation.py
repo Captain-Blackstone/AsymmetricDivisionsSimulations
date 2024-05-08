@@ -31,14 +31,9 @@ class Simulation:
                  save_path: str,
                  mode: str,
                  discretization_volume: int = 251,
-                 discretization_damage: int = 251,
-                 death_function_threshold: int = 1,
-                 death_function_curvature: int = 1,
-                 ):
+                 discretization_damage: int = 251):
         self.mode = mode
         self.params = params.copy()
-        self.params["G"] = death_function_curvature
-        self.params["T"] = death_function_threshold
 
         # TODO
         self.params["F"] /= 500

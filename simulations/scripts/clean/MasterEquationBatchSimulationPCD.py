@@ -34,7 +34,8 @@ if __name__ == "__main__":
             estimates = pd.read_csv(f"{save_path}/population_size_estimate.txt", sep=",", header=None)
             max_r = estimates.loc[estimates[2] == estimates[2].max()][1].values[0]
         a_neutral = scan_grid(params={"A": args.A, "B": args.B, "C": args.C,
-                                      "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                                      "D": args.D, "E": args.E, "F": args.F,
+                                      "G": args.death_function_curvature, "T": args.death_function_threshold},
                               r_steps=args.r, a_steps=args.a,
                               path=save_path,
                               simulationClass=PCDSimulation,
@@ -42,17 +43,26 @@ if __name__ == "__main__":
                               discretization_volume=args.discretization_volume,
                               discretization_damage=args.discretization_damage,
                               nondivision_threshold=args.nondivision_threshold,
-                              death_function_threshold=args.death_function_threshold,
-                              death_function_curvature=args.death_function_curvature,
                               phage_influx=args.phage_influx,
                               a_min=args.refine,
                               a_max=1,
                               max_r=max_r)
 
     else:
-
+        PCDSimulation(mode=args.mode,
+                      params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
+                               "E": args.E, "F": args.F,
+                               "G": args.death_function_curvature, "T": args.death_function_threshold,
+                               "a": 0, "r": 0},
+                       save_path=save_path,
+                       discretization_volume=args.discretization_volume,
+                       discretization_damage=args.discretization_damage,
+                       nondivision_threshold=args.nondivision_threshold,
+                       phage_influx=args.phage_influx,
+                       ).run(100000000, save=True)
         scan_grid_log(params={"A": args.A, "B": args.B, "C": args.C,
-                              "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                              "D": args.D, "E": args.E, "F": args.F,
+                              "G": args.death_function_curvature, "T": args.death_function_threshold},
                       r_steps=args.r, a_steps=args.a,
                       path=save_path,
                       simulationClass=PCDSimulation,
@@ -60,13 +70,12 @@ if __name__ == "__main__":
                       discretization_volume=args.discretization_volume,
                       discretization_damage=args.discretization_damage,
                       nondivision_threshold=args.nondivision_threshold,
-                      death_function_threshold=args.death_function_threshold,
-                      death_function_curvature=args.death_function_curvature,
                       phage_influx=args.phage_influx,
                       )
 
         find_the_peak_pcd(params={"A": args.A, "B": args.B, "C": args.C,
-                                  "D": args.D, "E": args.E, "F": args.F, "G": args.G},
+                                  "D": args.D, "E": args.E, "F": args.F,
+                                  "G": args.death_function_curvature, "T": args.death_function_threshold},
                           path=save_path,
                           mode=args.mode,
                           a_steps=args.a,
@@ -74,8 +83,6 @@ if __name__ == "__main__":
                           discretization_volume=args.discretization_volume,
                           discretization_damage=args.discretization_damage,
                           nondivision_threshold=args.nondivision_threshold,
-                          death_function_threshold=args.death_function_threshold,
-                          death_function_curvature=args.death_function_curvature,
                           phage_influx=args.phage_influx
                           )
     with open(f"{save_path}/scanning.txt", "a") as fl:
