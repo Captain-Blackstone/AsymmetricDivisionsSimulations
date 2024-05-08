@@ -151,7 +151,7 @@ def scan_grid_log(params: dict,
     if aa is None:
         aa = 1 - np.logspace(0, 2, a_steps) / 100
     if rr is None:
-        rr = [0] + list(np.logspace(0, 2, r_steps-1) / 100 * params["E"])
+        # rr = [0] + list(np.logspace(0, 2, r_steps-1) / 100 * params["E"])
         rr = list(np.logspace(0, 2, r_steps) / 100 * params["E"])
     for r in rr:
         conditions = initialize_conditions_dictionary(simulationClass)

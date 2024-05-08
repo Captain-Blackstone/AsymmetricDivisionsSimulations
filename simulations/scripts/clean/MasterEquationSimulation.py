@@ -37,21 +37,14 @@ class Simulation:
                  ):
         self.mode = mode
         self.params = params.copy()
-        self.death_function_threshold = death_function_threshold
-        self.death_function_curvature = death_function_curvature
+        self.params["G"] = death_function_curvature
+        self.params["T"] = death_function_threshold
 
         # TODO
         self.params["F"] /= 500
         self.p = np.linspace(1, 2, discretization_volume)
         self.q = np.arange(discretization_damage)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
-            self.damage_death_rate = (self.death_function_curvature * self.rhos / (self.death_function_threshold - self.rhos)) ** self.params["G"]
-            self.damage_death_rate[self.rhos >= self.death_function_threshold] = np.inf
-            self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
-                ~np.isinf(self.damage_death_rate)].max()
-
+        self.update_death_function()
         self.delta_t = 1e-20
 
         # Initialize p x q matrix
@@ -80,6 +73,19 @@ class Simulation:
         self.proposed_new_phi = None
         self.drawer = None
         self.pause = False
+
+    def update_death_function(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
+            self.damage_death_rate = (self.rhos / (self.params["T"] - self.rhos)) ** self.params["G"]
+            self.damage_death_rate[self.rhos >= self.params["T"]] = np.inf
+            self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
+                ~np.isinf(self.damage_death_rate)].max()
+            self.damage_death_rate /= self.damage_death_rate.max()
+            self.damage_death_rate *= 9007199254740991.0
+
+
 
     def run_interactive(self):
         if self.mode == "interactive":
@@ -166,7 +172,7 @@ class Simulation:
                     print(maxima)
                     print(t_minima)
                     print(t_maxima)
-                    print(self.params, self.death_function_threshold, self.death_function_curvature)
+                    print(self.params, self.params['T'], self.params["G"])
                     raise e
                 if len(smoothed) > 5:
                     index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]
@@ -215,7 +221,6 @@ class Simulation:
         return equilibrium_N(peaks)
 
     def step(self, step_number: int):
-        # self.delta_t = 0.001
         logging.debug(f"trying delta_t = {self.delta_t}")
         logging.debug(f"matrix at the start of the iteration:\n{self.matrix}")
         self.proposed_new_phi = update_nutrient(matrix=self.matrix,
@@ -269,7 +274,7 @@ class Simulation:
                 while not (accept_step and not self.pause):
                     try:
                         accept_step = self.step(step_number)
-                        if tm.time() > starting_time + max_time:
+                        if tm.time() > starting_time + max_time and self.mode != "interactive":
                             raise OverTimeException
                     except InvalidActionException:
                         self.delta_t /= 10

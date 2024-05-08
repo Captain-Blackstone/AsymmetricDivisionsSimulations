@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--refine", type=float, default=0)
     parser.add_argument("-dft", "--death_function_threshold", type=float, default=1)
     parser.add_argument("-dfc", "--death_function_curvature", type=float, default=1)
+    parser.add_argument("--save", action='store_true')
 
     args = parser.parse_args()
     if args.debug:
@@ -65,7 +66,9 @@ if __name__ == "__main__":
     atexit.register(lambda: write_completion(save_path))
     simulation = PCDSimulation(mode=args.mode,
                                params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
-                                       "E": args.E, "F": args.F, "G": args.G, "a": args.a, "r": args.r},
+                                       "E": args.E, "F": args.F,
+                                       "G": args.death_function_curvature, "T": args.death_function_threshold,
+                                       "a": args.a, "r": args.r},
                                save_path=save_path,
                                discretization_volume=args.discretization_volume,
                                discretization_damage=args.discretization_damage,
@@ -77,6 +80,6 @@ if __name__ == "__main__":
     if args.mode == "interactive":
         simulation.run_interactive()
     else:
-        simulation.run(10000000000, save=False)
+        simulation.run(10000000000, save=args.save)
 
 

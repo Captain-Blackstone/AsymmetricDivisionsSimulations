@@ -41,7 +41,7 @@ class PhageSimulation(Simulation):
     def clear_nonexistent(self):
         self.proposed_new_matrix, self.exited_phages = clear_nonexistent(matrix=self.proposed_new_matrix,
                                                                          rhos=self.rhos,
-                                                                         death_function_threshold=self.death_function_threshold
+                                                                         death_function_threshold=self.params["T"]
                                                                          )
 
     def step(self, step_number: int):
@@ -81,11 +81,18 @@ class PhageHistory(History):
         super().__init__(simulation_obj, save_path)
         self.phage_history = []
         self.damage_history = []
+        self.burst_dist_history = []
+        self.burst_dist = None
 
     def record(self) -> None:
         super().record()
         self.phage_history.append(self.simulation.ksi)
-        self.damage_history.append((self.simulation.matrix * self.simulation.q.reshape(1, len(self.simulation.q))).sum())
+        self.damage_history.append(
+            (self.simulation.matrix * self.simulation.q.reshape(1, len(self.simulation.q))).sum())
+        burst_dist = (self.simulation.damage_death_rate * self.simulation.matrix).sum(axis=0)
+        self.burst_dist_history.append(burst_dist)
+        if len(self.burst_dist_history) > 1000:
+            self.burst_dist_history = self.burst_dist_history[1:]
 
     def prepare_to_save(self) -> None:
         super().prepare_to_save()
@@ -104,7 +111,10 @@ class PhageHistory(History):
             else:
                 dam = self.damage_history[-1]
 
-        self.text += "," + str(round(ksi, 5)) + "," + str(round(dam, 5))
+        self.text += ("," + str(round(ksi, 5)) + "," + str(round(dam, 5)) + "," +
+                      str(self.burst_dist_history[-1].argmax()))
+        # deltas = self.times - np.array([0] + list(self.times)[:-1])
+        # self.burst_dist = [history * delta for history, delta in zip(self.burst_dist_history, deltas[-1000:])]
 
     def save(self) -> None:
         super().save()
@@ -113,3 +123,18 @@ class PhageHistory(History):
         #           "a") as fl:
         #     fl.write(",".join(list(map(str, self.phage_history))) + '\n')
         #     fl.write(",".join(list(map(str, self.damage_history ))) + '\n')
+        # with open(f"{self.save_path}/"
+        #           f"burst_size_dists_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+        #           "w") as fl:
+        #     for el in self.burst_dist:
+        #         fl.write(",".join(list(map(str, el))) + '\n')
+        # with open(f"{self.save_path}/"
+        #           f"pop_size_dists_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+        #           "w") as fl:
+        #     fl.write(",".join(list(map(str, self.simulation.matrix.sum(axis=0)))) + '\n')
+        #
+        # with open(f"{self.save_path}/"
+        #           f"population_structure_{self.simulation.params['a']}_{self.simulation.params['r']}.txt",
+        #           "w") as fl:
+        #     for i in range(self.simulation.matrix.shape[0]):
+        #         fl.write(",".join(list(map(str, self.simulation.matrix[i, :]))) + '\n')
