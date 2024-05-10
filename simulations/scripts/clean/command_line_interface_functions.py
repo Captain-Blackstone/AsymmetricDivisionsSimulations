@@ -238,7 +238,7 @@ def scan_until_death_or_a_neutral(params: dict,
 def find_the_peak_pcd(params: dict, path: str, a_steps: int, simulationClass, **kwargs):
     for _ in range(20):
         df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
-        df.columns = ["a", "r", "population_size", "converged", "type", "ksi", "estimated_equilibrium_damage"]
+        df.columns = ["a", "r", "population_size", "converged", "type", "ksi", "estimated_equilibrium_damage", "burst_size"]
         df = df.loc[df.type != "undefined"]
         current_peak = df.loc[df.population_size == df.population_size.max()]
         if current_peak.population_size.values[0] < 1:
