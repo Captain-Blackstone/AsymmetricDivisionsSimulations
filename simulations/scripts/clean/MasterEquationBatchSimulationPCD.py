@@ -49,17 +49,18 @@ if __name__ == "__main__":
                               max_r=max_r)
 
     else:
-        PCDSimulation(mode=args.mode,
-                      params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
-                               "E": args.E, "F": args.F,
-                               "G": args.death_function_curvature, "T": args.death_function_threshold,
-                               "a": 0, "r": 0},
-                       save_path=save_path,
-                       discretization_volume=args.discretization_volume,
-                       discretization_damage=args.discretization_damage,
-                       nondivision_threshold=args.nondivision_threshold,
-                       phage_influx=args.phage_influx,
-                       ).run(100000000, save=True)
+        if get_estimate(file=f"{save_path}/population_size_estimate.txt", a_val=0, r_val=0) is None:
+            PCDSimulation(mode=args.mode,
+                          params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
+                                   "E": args.E, "F": args.F,
+                                   "G": args.death_function_curvature, "T": args.death_function_threshold,
+                                   "a": 0, "r": 0},
+                           save_path=save_path,
+                           discretization_volume=args.discretization_volume,
+                           discretization_damage=args.discretization_damage,
+                           nondivision_threshold=args.nondivision_threshold,
+                           phage_influx=args.phage_influx
+                           ).run(100000000, save=True)
         params = {"A": args.A, "B": args.B, "C": args.C,
                   "D": args.D, "E": args.E, "F": args.F,
                   "G": args.death_function_curvature, "T": args.death_function_threshold}
@@ -87,6 +88,7 @@ if __name__ == "__main__":
         get_landscape_contour(params=params,
                               path=save_path,
                               simulationClass=PCDSimulation,
+                              mode=args.mode,
                               discretization_volume=args.discretization_volume,
                               discretization_damage=args.discretization_damage,
                               nondivision_threshold=args.nondivision_threshold,
