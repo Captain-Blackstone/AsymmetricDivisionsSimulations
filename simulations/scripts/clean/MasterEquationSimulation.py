@@ -10,7 +10,6 @@ import traceback
 import warnings
 import logging
 from tqdm import tqdm
-# from master_interactive_mode_clean import Drawer
 
 
 def gaussian_2d(x, y, mean_x, mean_y, var_x, var_y):
@@ -73,6 +72,7 @@ class Simulation:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.rhos = np.outer(1 / self.p, 2*self.q/(len(self.q)-1))
+            # self.rhos = np.ones((len(self.p), len(self.q))) * self.q/self.q.max()
             self.damage_death_rate = (self.rhos / (self.params["T"] - self.rhos)) ** self.params["G"]
             self.damage_death_rate[self.rhos >= self.params["T"]] = np.inf
             self.damage_death_rate[np.isinf(self.damage_death_rate)] = self.damage_death_rate[
@@ -80,10 +80,9 @@ class Simulation:
             self.damage_death_rate /= self.damage_death_rate.max()
             self.damage_death_rate *= 9007199254740991.0
 
-
-
     def run_interactive(self):
         if self.mode == "interactive":
+            from master_interactive_mode_clean import Drawer
             self.drawer = Drawer(self)
             self.drawer.run()
 
@@ -168,6 +167,8 @@ class Simulation:
                     print(t_minima)
                     print(t_maxima)
                     print(self.params, self.params['T'], self.params["G"])
+                    print(self.history.population_sizes)
+                    print(self.history.times)
                     raise e
                 if len(smoothed) > 5:
                     index_array = np.where(np.round(smoothed) != np.round(smoothed)[-1])[0]

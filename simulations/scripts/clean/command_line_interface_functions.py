@@ -105,6 +105,56 @@ def check_all_asymmetries(repair: float,
     return a_neutral, conditions
 
 
+def check_all_repairs(asymmetry: float,
+                      r_steps: int,
+                      params: dict,
+                      path: str,
+                      simulationClass,
+                      conditions: dict,
+                      r_min=0,
+                      r_max=None,
+                      **kwargs) -> (bool, np.array, float):
+    if r_max is None:
+        r_max = params["E"]
+    parameters = params.copy()
+    estimates_file = f"{path}/population_size_estimate.txt"
+    equilibria = []
+    for r in np.linspace(r_min, r_max, r_steps):
+        # Do not rerun already existing estimations
+        current_estimate = get_estimate(file=estimates_file, a_val=asymmetry, r_val=r)
+        if current_estimate is not None:
+            equilibria.append(round(current_estimate))
+            continue
+
+        parameters["a"] = round(asymmetry, 10)
+        parameters["r"] = round(r, 10)
+        simulation = simulationClass(params=parameters, save_path=path, **kwargs)
+
+        # Initialize from previous state
+        if any([el is None for el in conditions.values()]):
+            simulation.run(1000000000000000000, save=False)
+            for key in conditions.keys():
+                conditions[key] = getattr(simulation, key)
+            simulation = simulationClass(params=parameters, save_path=path, **kwargs)
+        if all([el is not None for el in conditions.values()]) and conditions["matrix"].sum() > 0:
+            if conditions["matrix"].sum() < 1:
+                conditions["matrix"] = conditions["matrix"] / conditions["matrix"].sum()
+            if conditions.get("ksi") is not None and conditions["ksi"] < 1:
+                conditions["ksi"] = 10000
+            for key, val in conditions.items():
+                setattr(simulation, key, val)
+
+        # Run the simulation
+        logging.info(f"starting simulation with params: {parameters}")
+        simulation.run(1000000000000000000)
+        for key in conditions.keys():
+            conditions[key] = getattr(simulation, key)
+
+        # Add equilibrium population size for this value of asymmetry to the list
+        if simulation.convergence_estimate is not None:
+            equilibria.append(round(simulation.convergence_estimate))
+
+
 def scan_grid(params: dict,
               r_steps: int,
               a_steps: int,
@@ -179,7 +229,6 @@ def scan_grid_log(params: dict,
                 if conditions.get("ksi") is not None and conditions["ksi"] < 1:
                     conditions["ksi"] = 10000
 
-
             logging.info(f"starting simulation with params: {parameters}")
             # Create simulation
             simulation = simulationClass(params=parameters, save_path=path, **kwargs)
@@ -247,12 +296,12 @@ def find_the_peak_pcd(params: dict, path: str, a_steps: int, simulationClass, **
         a_peak = current_peak.a.values[0]
         a_vals, r_vals = [], []
         for trait_peak, trait, not_trait, trait_list in zip([a_peak, r_peak],
-                                                 ["a", "r"], ["r", "a"],
-                                                 [a_vals, r_vals]):
+                                                            ["a", "r"], ["r", "a"],
+                                                            [a_vals, r_vals]):
             # sorted_unique = sorted(list(df.loc[df.not_trait == current_peak[not_trait].values[0]][trait].unique()))
             sorted_unique = sorted(list(df[trait].unique()))
             index = sorted_unique.index(trait_peak)
-            neighbour_indices = [index - 1, index + 1] #list(filter(lambda el: 0 <= el <= len(sorted_unique) - 1, [index - 1, index + 1]))
+            neighbour_indices = [index - 1, index + 1]  # list(filter(lambda el: 0 <= el <= len(sorted_unique) - 1, [index - 1, index + 1]))
             left = sorted_unique[neighbour_indices[0]] if neighbour_indices[0] >= 0 else 0
             if neighbour_indices[1] <= len(sorted_unique) - 1:
                 right = sorted_unique[neighbour_indices[1]]
@@ -282,6 +331,23 @@ def find_the_peak_pcd(params: dict, path: str, a_steps: int, simulationClass, **
                       aa=a_vals,
                       rr=r_vals,
                       **kwargs)
+
+
+def get_landscape_contour(params: dict, path: str, simulationClass, **kwargs):
+    df = pd.read_csv(f"{path}/population_size_estimate.txt", header=None)
+    df.columns = ["a", "r", "population_size", "converged", "type", "ksi", "estimated_equilibrium_damage", "burst_size"]
+    df = df.loc[df.type != "undefined"]
+    current_peak = df.loc[df.population_size == df.population_size.max()]
+    if current_peak.population_size.values[0] < 1:
+        return
+    r_peak = current_peak.r.values[0]
+    a_peak = current_peak.a.values[0]
+    conditions = initialize_conditions_dictionary(simulationClass)
+    check_all_asymmetries(repair=r_peak, a_steps=20, params=params,
+                          path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
+    conditions = initialize_conditions_dictionary(simulationClass)
+    check_all_repairs(asymmetry=a_peak, r_steps=20, params=params,
+                      path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
 
 
 def find_the_peak(params: dict, path: str, a_steps: int, simulationClass, **kwargs):

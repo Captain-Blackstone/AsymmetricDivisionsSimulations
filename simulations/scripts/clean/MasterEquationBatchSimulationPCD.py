@@ -60,9 +60,10 @@ if __name__ == "__main__":
                        nondivision_threshold=args.nondivision_threshold,
                        phage_influx=args.phage_influx,
                        ).run(100000000, save=True)
-        scan_grid_log(params={"A": args.A, "B": args.B, "C": args.C,
-                              "D": args.D, "E": args.E, "F": args.F,
-                              "G": args.death_function_curvature, "T": args.death_function_threshold},
+        params = {"A": args.A, "B": args.B, "C": args.C,
+                  "D": args.D, "E": args.E, "F": args.F,
+                  "G": args.death_function_curvature, "T": args.death_function_threshold}
+        scan_grid_log(params=params,
                       r_steps=args.r, a_steps=args.a,
                       path=save_path,
                       simulationClass=PCDSimulation,
@@ -73,9 +74,7 @@ if __name__ == "__main__":
                       phage_influx=args.phage_influx,
                       )
 
-        find_the_peak_pcd(params={"A": args.A, "B": args.B, "C": args.C,
-                                  "D": args.D, "E": args.E, "F": args.F,
-                                  "G": args.death_function_curvature, "T": args.death_function_threshold},
+        find_the_peak_pcd(params=params,
                           path=save_path,
                           mode=args.mode,
                           a_steps=args.a,
@@ -85,5 +84,12 @@ if __name__ == "__main__":
                           nondivision_threshold=args.nondivision_threshold,
                           phage_influx=args.phage_influx
                           )
+        get_landscape_contour(params=params,
+                              path=save_path,
+                              simulationClass=PCDSimulation,
+                              discretization_volume=args.discretization_volume,
+                              discretization_damage=args.discretization_damage,
+                              nondivision_threshold=args.nondivision_threshold,
+                              phage_influx=args.phage_influx)
     with open(f"{save_path}/scanning.txt", "a") as fl:
         fl.write("success\n")
