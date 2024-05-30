@@ -58,8 +58,8 @@ def check_all_asymmetries(repair: float,
                           path: str,
                           simulationClass,
                           conditions: dict,
-                          a_min=0,
-                          a_max=1,
+                          a_min=0.0,
+                          a_max=1.0,
                           **kwargs) -> (bool, np.array, float):
 
     parameters = params.copy()
@@ -343,10 +343,11 @@ def get_landscape_contour(params: dict, path: str, simulationClass, **kwargs):
     r_peak = current_peak.r.values[0]
     a_peak = current_peak.a.values[0]
     conditions = initialize_conditions_dictionary(simulationClass)
-    check_all_asymmetries(repair=r_peak, a_steps=20, params=params,
-                          path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
+    check_all_asymmetries(repair=r_peak, a_steps=21, params=params,
+                          path=path, simulationClass=simulationClass, conditions=conditions, **kwargs,
+                          a_min=params["dft"], a_max=1)
     conditions = initialize_conditions_dictionary(simulationClass)
-    check_all_repairs(asymmetry=a_peak, r_steps=20, params=params,
+    check_all_repairs(asymmetry=a_peak, r_steps=21, params=params,
                       path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
 
 

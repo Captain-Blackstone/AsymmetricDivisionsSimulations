@@ -117,6 +117,13 @@ class Simulation:
         return f"time = {self.time}, population size = {self.matrix.sum()}, delta_t: {self.delta_t}, phi={self.phi}"
 
     def check_convergence_v2(self):
+        critical_period = 10
+        if len(self.history.times) > critical_period:
+            if len(set(self.history.population_sizes[-critical_period:])) == 1:
+                # Last 'critical period' of time was with EXACTLY the same population size
+                self.converged = True
+                self.convergence_estimate = self.matrix.sum()
+                logging.info(f"EXACTLY same population size for {critical_period} steps")
         critical_period = self.max_delta_t * 20000
         # Claiming convergence only if critical period of time passed
         if self.history.times[-1] > critical_period:
