@@ -345,7 +345,7 @@ def get_landscape_contour(params: dict, path: str, simulationClass, **kwargs):
     conditions = initialize_conditions_dictionary(simulationClass)
     check_all_asymmetries(repair=r_peak, a_steps=21, params=params,
                           path=path, simulationClass=simulationClass, conditions=conditions, **kwargs,
-                          a_min=params["dft"], a_max=1)
+                          a_min=1-params["dft"], a_max=1)
     conditions = initialize_conditions_dictionary(simulationClass)
     check_all_repairs(asymmetry=a_peak, r_steps=21, params=params,
                       path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
