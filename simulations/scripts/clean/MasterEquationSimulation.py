@@ -173,7 +173,7 @@ class Simulation:
                     print(maxima)
                     print(t_minima)
                     print(t_maxima)
-                    print(self.params, self.params['T'], self.params["G"])
+                    print(self.params)
                     print(self.history.population_sizes)
                     print(self.history.times)
                     raise e
@@ -290,7 +290,8 @@ class Simulation:
                     self.last_record_n = self.matrix.sum()
                     last_recorded = 0
                     self.history.record()
-                    self.check_convergence_v2()
+                    if self.mode != "interactive":
+                        self.check_convergence_v2()
                     logging.info(self.get_logging_text)
                 if self.converged and infinite==False:
                     break

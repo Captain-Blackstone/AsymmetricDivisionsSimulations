@@ -51,7 +51,7 @@ if __name__ == "__main__":
     else:
         if get_estimate(file=f"{save_path}/population_size_estimate.txt", a_val=0, r_val=0) is None:
             PCDSimulation(mode=args.mode,
-                          params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
+                          params={"A": args.A, "B": args.B, "C": args.C, "D": args.D,
                                    "E": args.E, "F": args.F,
                                    "G": args.death_function_curvature, "T": args.death_function_threshold,
                                    "a": 0, "r": 0},

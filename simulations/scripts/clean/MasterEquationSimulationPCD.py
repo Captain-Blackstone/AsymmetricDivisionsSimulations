@@ -21,7 +21,7 @@ class PCDSimulation(PhageSimulation):
 
     def accumulate_damage(self):
         return accumulate_phage(matrix=self.matrix,
-                                C=self.params["C"], F=self.params["F"],
+                                C=self.params["C"], F=self.params["F"], D=self.params["D"],
                                 ksi=self.ksi,
                                 delta_t=self.delta_t,
                                 p=self.p, q=self.q)
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     Path(save_path).mkdir(exist_ok=True)
     atexit.register(lambda: write_completion(save_path))
     simulation = PCDSimulation(mode=args.mode,
-                               params={"A": args.A, "B": args.B, "C": args.C, "D": 0,
+                               params={"A": args.A, "B": args.B, "C": args.C, "D": args.D,
                                        "E": args.E, "F": args.F,
                                        "G": args.death_function_curvature, "T": args.death_function_threshold,
                                        "a": args.a, "r": args.r},
