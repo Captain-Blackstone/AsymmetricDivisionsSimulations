@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.WARNING)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MasterEquation simulator PCD")
     tune_parser(parser)
-    parser.add_argument("--nondivision_threshold", type=int, default=0)
+    parser.add_argument("--nondivision_threshold", type=int, default=1)
     parser.add_argument("--phage_influx", type=float, default=0)
     parser.add_argument("--refine", type=float, default=0)
     parser.add_argument("-dft", "--death_function_threshold", type=float, default=1)

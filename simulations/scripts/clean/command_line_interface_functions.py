@@ -41,6 +41,7 @@ def get_estimate(file: str, a_val: float, r_val: float):
         if len(relevant_estimates) > 0:
             logging.info(f"skipping a={a_val}, r={r_val}, estimate already exists")
             return list(relevant_estimates[2])[0]
+    logging.info(f"running a={a_val}, r={r_val}")
     return None
 
 
@@ -348,6 +349,8 @@ def get_landscape_contour(params: dict, path: str, simulationClass, **kwargs):
                           a_min=1-params["T"], a_max=1)
     conditions = initialize_conditions_dictionary(simulationClass)
     check_all_repairs(asymmetry=a_peak, r_steps=21, params=params,
+                      path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
+    check_all_repairs(asymmetry=0, r_steps=21, params=params,
                       path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
 
 
