@@ -14,9 +14,9 @@ class Drawer:
     """
     def __init__(self, simulation_thread):
         self.simulation = simulation_thread
-        self.update_time = 500  # number of steps between figure updates
-        self.resolution = 150  # number of steps between data collection events
-        self.plot_how_many = 1000  # number of points present on the plot at each time point
+        self.update_time = 3000  # number of steps between figure updates
+        self.resolution = 1000  # number of steps between data collection events
+        self.plot_how_many = 100  # number of points present on the plot at each time point
         self.timeline = []
         # plt.ion()
         self.fig, self.ax = plt.subplots(3, 2, figsize=(15, 10))
@@ -40,7 +40,7 @@ class Drawer:
              "update_function": lambda: self.simulation.matrix.sum(axis=1)},
             {"ax_num": [1, 1], "color": "green", "alpha": 1, "label": "Damage dist",
              "update_function":
-                 lambda: np.trim_zeros(self.simulation.matrix.sum(axis=0))},
+                 lambda: np.trim_zeros(self.simulation.history.burst_dist_history[-1]) if self.simulation.history.burst_dist_history else self.simulation.matrix.sum(axis=0)},
             # {"ax_num": [2, 1], "color": "green", "alpha": 1, "label": "Rho dist",
             #  "update_function":
             #      lambda: self.damage_update_func()}
@@ -285,7 +285,7 @@ class MatrixPlot:
             column_numbers = []
             row_numbers = []
             values = []
-
+            death_values = []
             for i, row in enumerate(mtx):
                 for j, value in enumerate(row):
                     column_numbers.append(j)
@@ -306,7 +306,9 @@ class MatrixPlot:
             #     ax.tricontourf(column_numbers, row_numbers, values,
             #                    levels=list(range(mtx.min(), mtx.max()+2)),
             #                    cmap=cmap, vmin=mtx.min(), vmax=mtx.max())
-            self.ax.tricontourf(column_numbers, row_numbers, values, levels=levels, colors=colors)
+            # self.ax.tricontourf(column_numbers, row_numbers, values, levels=levels, colors=colors)
+            self.ax.imshow(np.flip(np.log10(self.drawer.simulation.damage_death_rate),  axis=0), aspect=7)
+            self.ax.imshow(np.flip(np.log10(self.drawer.simulation.matrix), axis=0), aspect=7)
         except Exception as e:
             print(e)
 
@@ -367,6 +369,7 @@ class Window():
         except ValueError:
             print("Invalid value")
         self.drawer.simulation.params[param] = val
+        self.drawer.simulation.update_death_function()
         print(f"Updating {param} = {val}")
 
     def run_pressed(self):

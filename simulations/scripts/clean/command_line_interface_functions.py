@@ -9,23 +9,23 @@ from MasterEquationSimulationPCD import PCDSimulation
 
 
 def tune_parser(parser: argparse.ArgumentParser, ar_type=int):
-    parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"])
-    parser.add_argument("-ni", "--niterations", default=100000, type=int)
-    parser.add_argument("--run_name", type=str, default="")
-    parser.add_argument("-A", type=float)  # nu * x * phi0
-    parser.add_argument("-B", type=float)  # R / V
-    parser.add_argument("-C", type=float)  # nu * x / V
-    parser.add_argument("-D", type=float)  # d / K ?
-    parser.add_argument("-E", type=float)  # 0 < E <= 1
-    parser.add_argument("-F", type=float)  # 0 <= F
-    parser.add_argument("-G", type=float, default=1.0)  # G
-    parser.add_argument("-H", type=float, default=0)
-    parser.add_argument("-a", type=ar_type)  # 0 <= a <= 1
-    parser.add_argument("-r", type=ar_type)  # 0 <= r <= E
-    parser.add_argument("--discretization_volume", type=int, default=41)
-    parser.add_argument("--discretization_damage", type=int, default=1001)
-    parser.add_argument("--save_path", type=str, default=None)
-    parser.add_argument("--debug", action='store_true')
+    parser.add_argument("-m", "--mode", default="local", type=str, choices=["cluster", "local", "interactive"], help="mode=cluster outputs no information to the command line and stores the outputs in the ./data/ folder; mode=local outputs information about number of iterations the simulation run through and stores the output in the ../../data/ folder; mode=interactive opens an interactive window where the user can set all the parameters and observe the change in variable values while the simulation is running. It is even possible to change the parameters in the middle of the run, but the simulation has to be paused while the parameters are tweaked.")
+    parser.add_argument("-ni", "--niterations", default=100000, type=int, help="number of iterations of a simulation to carry out. It is advisable to set it to an arbitrary large number - the simulation will stop when equilibrium is achieved or when the time limit (20 minutes) is reached")
+    parser.add_argument("--run_name", type=str, default="", help="not used")
+    parser.add_argument("-A", type=float, default=28.0, help="A parameter, growth rate (see the paper")  # nu * x * phi0
+    parser.add_argument("-B", type=float, help="B parameter, dilution rate (see the paper)")  # R / V
+    parser.add_argument("-C", type=float, help="C parameter, nutrient and phage acquizition rate (see the paper)")  # nu * x / V
+    parser.add_argument("-D", type=float, default=0, help="rate of linear phage replication rate (was not included in the paper, equals to 0 by default")  # d / K ?
+    parser.add_argument("-E", type=float, help="E parameter, cost of immunity (see the paper)")  # 0 < E <= 1
+    parser.add_argument("-F", type=float, help="F parameter, phage replication rate (see the paper)")  # 0 <= F
+    parser.add_argument("-G", type=float, default=1.0, help="not used")  # G
+    parser.add_argument("-H", type=float, default=0, help="not used")
+    parser.add_argument("-a", type=ar_type, help="a parameter, investment in PCD, between 0 and 1 (see the paper")  # 0 <= a <= 1
+    parser.add_argument("-r", type=ar_type, help="r parameter, investment in immunity, between 0 and E (see the paper)")  # 0 <= r <= E
+    parser.add_argument("--discretization_volume", type=int, default=41, help="number of cell size bins")
+    parser.add_argument("--discretization_damage", type=int, default=1001, help="maximum conceivable number of phages (T=1 means burst size is equal to this parameter)")
+    parser.add_argument("--save_path", type=str, default=None, help="path to the folder where the result of the simulation will be stored")
+    parser.add_argument("--debug", action='store_true', help="whether to output information about the simulation to the command line")
 
 
 def write_completion(path):
@@ -200,10 +200,10 @@ def scan_grid_log(params: dict,
     parameters = params.copy()
     estimates_file = f"{path}/population_size_estimate.txt"
     if aa is None:
-        aa = 1 - np.logspace(0, 2, a_steps) / 100
+        aa = [1] + list(1 - np.logspace(0, 2, a_steps) / 100)
     if rr is None:
         # rr = [0] + list(np.logspace(0, 2, r_steps-1) / 100 * params["E"])
-        rr = list(np.logspace(0, 2, r_steps) / 100 * params["E"])
+        rr = [0] + list(np.logspace(0, 2, r_steps) / 100 * params["E"])
     for r in rr:
         conditions = initialize_conditions_dictionary(simulationClass)
         for a in aa:
@@ -244,7 +244,7 @@ def scan_grid_log(params: dict,
             # Save the final conditions
             for key in conditions.keys():
                 conditions[key] = getattr(simulation, key)
-
+        break
 
 def scan_until_death_or_a_neutral(params: dict,
                                   path: str,
@@ -350,7 +350,7 @@ def get_landscape_contour(params: dict, path: str, simulationClass, **kwargs):
     conditions = initialize_conditions_dictionary(simulationClass)
     check_all_repairs(asymmetry=a_peak, r_steps=21, params=params,
                       path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
-    check_all_repairs(asymmetry=0, r_steps=21, params=params,
+    check_all_repairs(asymmetry=1-params["T"], r_steps=21, params=params,
                       path=path, simulationClass=simulationClass, conditions=conditions, **kwargs)
 
 

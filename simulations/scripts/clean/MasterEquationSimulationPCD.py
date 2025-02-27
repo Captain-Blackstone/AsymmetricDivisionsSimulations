@@ -29,7 +29,8 @@ class PCDSimulation(PhageSimulation):
     def upkeep_after_step(self):
         super().upkeep_after_step()
         self.matrix[self.rhos > 1 - self.params["a"]] = 0
-
+        
+        
 
 if __name__ == "__main__":
     import atexit
@@ -40,12 +41,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(prog="MasterEquation simulator PCD")
     tune_parser(parser, ar_type=float)
-    parser.add_argument("--nondivision_threshold", type=int, default=0)
-    parser.add_argument("--phage_influx", type=float, default=0)
+    parser.add_argument("--nondivision_threshold", type=int, default=0, help="cells with number of phages >= nondivision_threshold will not divide after they grow to the division size and their growth will be arrested.")
+    parser.add_argument("--phage_influx", type=float, default=0, help="psi parameter (see the paper)")
     parser.add_argument("--refine", type=float, default=0)
-    parser.add_argument("-dft", "--death_function_threshold", type=float, default=1)
-    parser.add_argument("-dfc", "--death_function_curvature", type=float, default=1)
-    parser.add_argument("--save", action='store_true')
+    parser.add_argument("-dft", "--death_function_threshold", type=float, default=1, help="T parameter (see the paper)")
+    parser.add_argument("-dfc", "--death_function_curvature", type=float, default=1, help="G parameter (see the paper)")
+    parser.add_argument("--save", action='store_true', help="whether the results of the simulation have to be saved")
 
     args = parser.parse_args()
     if args.debug:

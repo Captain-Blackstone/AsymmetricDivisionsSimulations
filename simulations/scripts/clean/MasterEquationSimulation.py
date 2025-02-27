@@ -215,7 +215,7 @@ class Simulation:
         self.time += self.delta_t
         self.max_delta_t = max(self.max_delta_t, self.delta_t)
         self.delta_t *= 2
-        self.delta_t = min(self.delta_t, 0.01)
+        self.delta_t = min(self.delta_t, 0.001)
 
     def clear_nonexistent(self):
         self.proposed_new_matrix = clear_nonexistent(matrix=self.proposed_new_matrix, rhos=self.rhos)
@@ -359,6 +359,7 @@ class History:
         #         self.population_sizes = list(get_peaks(self.population_sizes)) + [self.population_sizes[-1]]
         # #     fl.write(",".join(list(map(str, self.times))) + '\n')
         #     fl.write(",".join(list(map(str, self.population_sizes))) + '\n')
-        # # with open(f"{self.save_path}/final_state_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:
-        # #     for el in self.simulation.matrix:
-        # #         fl.write(" ".join(map(str, el)) + '\n')
+        print(f"{self.save_path}/final_state_{self.simulation.params['a']}_{self.simulation.params['r']}.txt")
+        with open(f"{self.save_path}/final_state_{self.simulation.params['a']}_{self.simulation.params['r']}.txt", "w") as fl:
+            for el in self.simulation.matrix:
+                fl.write(" ".join(map(str, el)) + '\n')
